@@ -1,5 +1,5 @@
 
-m ophyd.userapi.scan_api import Scan, AScan, DScan, Count, estimate
+from ophyd.userapi.scan_api import Scan, AScan, DScan, Count, estimate
 from prettytable import PrettyTable
 from collections import OrderedDict
 
