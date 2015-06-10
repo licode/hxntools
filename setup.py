@@ -16,7 +16,10 @@ from distutils.core import setup
 
 setup(
     name='hxntools',
-    version="0.0.0",
+    version="0.0.1",
     author='Brookhaven National Laboratory',
-    packages=['hxntools'],
+    packages=['hxntools', 'hxntools.detectors'],
+    install_requires=['numpy>=1.8', 'ophyd>=0.0.6',
+                      'h5py>=2.5.0', 'filestore>=0.0.4'],
+
 )

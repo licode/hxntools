@@ -1,0 +1,268 @@
+from __future__ import print_function
+import os
+import time
+import logging
+import h5py
+import numpy as np
+
+import filestore.api as fs_api
+import uuid
+from filestore.handlers import _HDF5HandlerBase
+
+from ophyd.controls.areadetector.detectors import (AreaDetector, ADSignal)
+
+logger = logging.getLogger(__name__)
+
+FMT_ROI_KEY = 'entry/instrument/detector/NDAttributes/CHAN{}ROI{}'
+XRF_DATA_KEY = 'entry/instrument/detector/data'
+
+
+def makedirs(path, mode=0777):
+    '''Recursively make directories and set permissions'''
+    # Permissions not working with os.makedirs -
+    # See: http://stackoverflow.com/questions/5231901
+    if not path or os.path.exists(path):
+        return []
+
+    head, tail = os.path.split(path)
+    ret = makedirs(head, mode)
+    os.mkdir(path)
+    os.chmod(path, mode)
+    ret.append(path)
+    return ret
+
+
+class Xspress3Detector(AreaDetector):
+    _html_docs = ['']
+
+    xs_config_path = ADSignal('CONFIG_PATH', has_rbv=True)
+    xs_config_save_path = ADSignal('CONFIG_SAVE_PATH', has_rbv=True)
+    xs_connect = ADSignal('CONNECT')
+    xs_connected = ADSignal('CONNECTED')
+    xs_ctrl_dtc = ADSignal('CTRL_DTC', has_rbv=True)
+    xs_ctrl_mca_roi = ADSignal('CTRL_MCA_ROI', has_rbv=True)
+    xs_debounce = ADSignal('DEBOUNCE', has_rbv=True)
+    xs_disconnect = ADSignal('DISCONNECT')
+    xs_erase = ADSignal('ERASE')
+    xs_erase_array_counters = ADSignal('ERASE_ArrayCounters')
+    xs_erase_attr_reset = ADSignal('ERASE_AttrReset')
+    xs_erase_proc_reset_filter = ADSignal('ERASE_PROC_ResetFilter')
+    xs_frame_count = ADSignal('FRAME_COUNT_RBV', rw=False)
+    xs_hdf_capture = ADSignal('HDF5:Capture_RBV', rw=False)
+    xs_hdf_num_capture_calc = ADSignal('HDF5:NumCapture_CALC')
+    xs_invert_f0 = ADSignal('INVERT_F0', has_rbv=True)
+    xs_invert_veto = ADSignal('INVERT_VETO', has_rbv=True)
+    xs_max_frames = ADSignal('MAX_FRAMES_RBV', rw=False)
+    xs_max_frames_driver = ADSignal('MAX_FRAMES_DRIVER_RBV', rw=False)
+    xs_max_num_channels = ADSignal('MAX_NUM_CHANNELS_RBV', rw=False)
+    xs_max_spectra = ADSignal('MAX_SPECTRA', has_rbv=True)
+    xs_name = ADSignal('NAME')
+    xs_num_cards = ADSignal('NUM_CARDS_RBV', rw=False)
+    xs_num_channels = ADSignal('NUM_CHANNELS', has_rbv=True)
+    xs_num_frames_config = ADSignal('NUM_FRAMES_CONFIG', has_rbv=True)
+    xs_reset = ADSignal('RESET')
+    xs_restore_settings = ADSignal('RESTORE_SETTINGS')
+    xs_run_flags = ADSignal('RUN_FLAGS', has_rbv=True)
+    xs_save_settings = ADSignal('SAVE_SETTINGS')
+    xs_trigger = ADSignal('TRIGGER')
+    xs_update = ADSignal('UPDATE')
+    xs_update_attr = ADSignal('UPDATE_AttrUpdate')
+
+    def setup(self, path, prefix, num_points,
+              external=True, create_dirs=True,
+              settle_time=0.1):
+        if not external:
+            raise NotImplementedError('TODO')
+
+        if create_dirs:
+            try:
+                makedirs(path)
+            except OSError:
+                pass
+
+        self.acquire.put(0)
+        self.xs_erase.put(1)
+        time.sleep(settle_time)
+
+        self.num_images.put(num_points)
+        self.hdf5.file_path.put(path)
+        self.hdf5.file_name.put(prefix)
+        self.hdf5.file_number.put(1)
+        self.trigger_mode.put(3)  # TTL Veto Only
+
+        time.sleep(settle_time)
+        self.acquire.put(1)
+        time.sleep(settle_time)
+        self.hdf5.capture.put(1)
+
+    def teardown(self):
+        acquiring = self.hdf5.num_captured.value < self.num_images.value
+        if acquiring or self.acquire.value:
+            logger.warning("xspress3 didn't acquire all frames; stopping "
+                           "acquisition/file saving")
+            self.acquire.put(0)  # stop acquire
+            self.hdf5.capture.put(0)
+            time.sleep(0.1)
+
+        self.trigger_mode.put(1)  # internal
+
+    def get_hdf5_rois(self, fn, rois, wait=True,
+                      data_key=XRF_DATA_KEY):
+        warned = False
+        num_points = self.num_images.value
+        while True:
+            try:
+                try:
+                    hdf = h5py.File(fn, 'r')
+                except IOError:
+                    if not warned:
+                        logger.error('Xspress3 hdf5 file still open; press '
+                                     'Ctrl-C to cancel')
+                        warned = True
+
+                    time.sleep(0.2)
+                    self.hdf5.capture.put(0)
+                    self.acquire.put(0)
+                    if not wait:
+                        raise RuntimeError('Unable to open HDF5 file; retry '
+                                           'disabled')
+
+                else:
+                    if warned:
+                        logger.info('Xspress3 hdf5 file opened')
+                    break
+            except KeyboardInterrupt:
+                raise RuntimeError('Unable to open HDF5 file; interrupted '
+                                   'by Ctrl-C')
+
+        handler = Xspress3HDF5Handler(hdf, key=data_key)
+        for roi_info in rois:
+            roi = handler.get_roi(roi_info, max_points=num_points)
+            yield Xspress3ROI(chan=roi_info.chan, ev_low=roi_info.ev_low,
+                              ev_high=roi_info.ev_high, data=roi)
+
+    @property
+    def xsp3_hdf5(self):
+        base_path = self.hdf5.file_path.value
+        file_name = self.hdf5.file_name.value
+        template = self.hdf5.file_template.value
+        next_number = self.hdf5.file_number.value
+        file_num = next_number - 1
+        return template % (base_path, file_name, file_num)
+
+    @property
+    def filestore_id(self):
+        return self._fs_id
+
+    def filestore_setup(self, desc):
+        self._fs_id = fs_api.insert_resource('xsp3', self.xsp3_hdf5)
+        _spectra_desc = {'source': 'FileStore:{0.id!s}'.format(self._fs_id),
+                         'external': 'FILESTORE:',
+                         'dtype': 'array',
+                         }
+
+        for chan in range(1, 9):
+            desc['xsp3_ch{}'.format(chan)] = _spectra_desc
+
+    def filestore_frame(self, timestamp, seq_num, detvals):
+        for chan in range(1, 9):
+            mds_key = 'xsp3_ch{}'.format(chan)
+
+            datum_uid = str(uuid.uuid4())
+            datum_key = 'ch%d_spectrum_%.5d-%s' % (chan, seq_num, datum_uid)
+            datum_args = {'frame': seq_num, 'channel': chan}
+            fs_api.insert_datum(self._fs_id, datum_key, datum_args)
+            detvals[mds_key] = {'timestamp': timestamp,
+                                'value': datum_key,
+                                }
+
+
+class Xspress3ROI(object):
+    def __init__(self, chan=1, ev_low=1, ev_high=1000, data=None):
+        self._chan = chan
+        self._ev_low = ev_low
+        self._ev_high = ev_high
+        self._bin_low = self._ev_to_bin(ev_low)
+        self._bin_high = self._ev_to_bin(ev_high)
+        self._data = data
+
+    @property
+    def data(self):
+        return self._data
+
+    @property
+    def chan(self):
+        return self._chan
+
+    @property
+    def ev_low(self):
+        return self._ev_low
+
+    @property
+    def ev_high(self):
+        return self._ev_high
+
+    @property
+    def bin_low(self):
+        return self._bin_low
+
+    @property
+    def bin_high(self):
+        return self._bin_high
+
+    def _ev_to_bin(self, ev):
+        return int(ev / 10) - int((ev / 10) % 10)
+
+    def __repr__(self):
+        return '{0.__class__.__name__}(chan={0.chan}, ev_low={0.ev_low}, ' \
+               'ev_high={0.ev_high}, data={0.data!r})'.format(self)
+
+
+class Xspress3HDF5Handler(_HDF5HandlerBase):
+    specs = {'XSP3'} | _HDF5HandlerBase.specs
+    HANDLER_NAME = 'xsp3'
+
+    def __init__(self, filename, key=XRF_DATA_KEY):
+        if isinstance(filename, h5py.File):
+            self._file = filename
+            self._filename = self._file.filename
+        else:
+            self._filename = filename
+            self._file = None
+        self._key = key
+        self._dataset = None
+        self.open()
+
+    def __call__(self, frame=None, channel=None):
+        # Don't read out the dataset until it is requested for the first time.
+        if not self._dataset:
+            self._dataset = self._file[self._key]
+
+        return self._dataset[frame, channel - 1, :].squeeze()
+
+    def get_roi(self, roi_info, frame=None, max_points=None):
+        if not self._dataset:
+            self._dataset = self._file[self._key]
+
+        chan = roi_info.chan
+        bin_low = roi_info.bin_low
+        bin_high = roi_info.bin_high
+
+        roi = np.sum(self._dataset[:, chan - 1, bin_low:bin_high], axis=1)
+        if max_points is not None:
+            roi = roi[:max_points]
+
+            if len(roi) < max_points:
+                roi = np.pad(roi, ((0, max_points - len(roi)), ), 'constant')
+
+        if frame is not None:
+            roi = roi[frame, :]
+
+        return roi
+
+    def __repr__(self):
+        return '{0.__class__.__name__}(filename={0._filename!r})'.format(self)
+
+
+fs_api.register_handler(Xspress3HDF5Handler.HANDLER_NAME,
+                        Xspress3HDF5Handler)
