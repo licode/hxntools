@@ -7,9 +7,11 @@ import numpy as np
 
 import filestore.api as fs_api
 import uuid
-from filestore.handlers import _HDF5HandlerBase
+from filestore.handlers import HandlerBase
 
 from ophyd.controls.areadetector.detectors import (AreaDetector, ADSignal)
+from ophyd.controls.area_detector import AreaDetectorFileStore
+from ophyd.controls.detector import DetectorStatus
 
 logger = logging.getLogger(__name__)
 
@@ -26,15 +28,145 @@ def makedirs(path, mode=0777):
 
     head, tail = os.path.split(path)
     ret = makedirs(head, mode)
-    os.mkdir(path)
+    try:
+        os.mkdir(path)
+    except OSError as ex:
+        if 'File exists' not in str(ex):
+            raise
+
     os.chmod(path, mode)
     ret.append(path)
     return ret
 
 
+class Xspress3FileStore(AreaDetectorFileStore):
+    def __init__(self, det, basename, file_template='%s%s_%6.6d.h5',
+                 **kwargs):
+        self.file_template = file_template
+        super(Xspress3FileStore, self).__init__(basename, cam='',
+                                                **kwargs)
+
+        self._det = det
+        self._file_template = det.hdf5.file_template
+
+    def _reset_state(self):
+        super(Xspress3FileStore, self)._reset_state()
+        self._id_cache = []
+
+    def _insert_data(self, detvals, timestamp, seq_num):
+        for chan in range(1, 9):
+            mds_key = '{}_ch{}'.format(self._det.name, chan)
+
+            datum_uid = str(uuid.uuid4())
+            datum_key = 'ch%d_spectrum_%.5d-%s' % (chan, seq_num, datum_uid)
+            datum_args = {'frame': seq_num, 'channel': chan}
+            fs_api.insert_datum(self._filestore_res, datum_key, datum_args)
+            detvals[mds_key] = {'timestamp': timestamp,
+                                'value': datum_key,
+                                }
+
+    def read(self):
+        detvals = {}
+
+        self._insert_data(detvals, time.time(), self._abs_trigger_count)
+        self._abs_trigger_count += 1
+        return detvals
+
+    def _make_filename(self, **kwargs):
+        super(Xspress3FileStore, self)._make_filename(**kwargs)
+
+        makedirs(self._store_file_path)
+
+        # TODO NumCapture=1e6 causes 25GB (!) HDF files and insane slowdowns.
+        #      why is this set this way?
+        # self._write_plugin('NumCapture', 1000, self._file_plugin)
+        # OK, removing ROIs from hdf5 file as they're redundant information
+        # this also makes it such that ~500 1-million entry attributes
+        # are inserted per scan
+
+    def deconfigure(self, *args, **kwargs):
+        # self._det.hdf5.capture.put(0)
+        while self._det.hdf5.capture.value == 1:
+            logger.warning('Still capturing data .... waiting.')
+            time.sleep(0.1)
+
+        self._det.trigger_mode.put('Internal')  # internal
+
+        super(Xspress3FileStore, self).deconfigure(*args, **kwargs)
+
+    def configure(self, *args, **kwargs):
+        # TODO: why doesn't configure at least pass the scan instance?
+        num_points = self._det._num_scan_points
+
+        self._det.acquire.put(0)
+        self._det.xs_erase.put(1)
+        time.sleep(0.1)
+
+        self._det.trigger_mode.put('TTL Veto Only')
+        self._det.num_images.put(num_points)
+        # self._det.trigger_mode.put('Internal')
+
+        super(Xspress3FileStore, self).configure(*args, **kwargs)
+
+        self._make_filename(seq=0)
+        self._det.hdf5.file_template.put(self.file_template, wait=True)
+        self._det.hdf5.file_number.put(0)
+        self._det.hdf5.enable.put(1)
+        self._det.hdf5.file_path.put(self._ioc_file_path, wait=True)
+        self._det.hdf5.file_name.put(self._filename, wait=True)
+
+        if not self._det.hdf5.file_path_exists.value:
+            raise IOError("Path {} does not exits on IOC!! Please Check"
+                          .format(self._det.hdf5.file_path.value))
+
+        self._filestore_res = self._insert_fs_resource()
+        self._det.acquire.put(1, wait=False)
+        self._det.hdf5.capture.put(1, wait=False)
+
+    def acquire(self, **kwargs):
+        status = DetectorStatus(self)
+        status._finished()
+        # scaler/zebra take care of timing
+        return status
+
+    def describe(self):
+        size = (self._det.num_images.value,
+                self._det.hdf5.height.value,
+                self._det.hdf5.width.value)
+
+        # TODO: describe is called prior to configure, so the filestore resource
+        #       is not yet generated
+        # spec_desc = {'source': 'FileStore:{0.id!s}'.format(self._filestore_res),
+        spec_desc = {'source': 'FileStore:',
+                     'external': 'FILESTORE:',
+                     'dtype': 'array',
+                     'size': size,
+                     }
+
+        desc = {}
+        for chan in range(1, 9):
+            desc['{}_ch{}'.format(self._det.name, chan)] = spec_desc
+
+        return desc
+
+    def _insert_fs_resource(self):
+        return fs_api.insert_resource(Xspress3HDF5Handler.HANDLER_NAME,
+                                      self.store_filename, {})
+
+    def filestore_frame(self, timestamp, seq_num, detvals):
+        pass
+
+    @property
+    def store_filename(self):
+        return self._store_filename
+
+    @property
+    def ioc_filename(self):
+        return self._ioc_filename
+
+
 class Xspress3Detector(AreaDetector):
     _html_docs = ['']
-
     xs_config_path = ADSignal('CONFIG_PATH', has_rbv=True)
     xs_config_save_path = ADSignal('CONFIG_SAVE_PATH', has_rbv=True)
     xs_connect = ADSignal('CONNECT')
@@ -68,34 +200,19 @@ class Xspress3Detector(AreaDetector):
     xs_update = ADSignal('UPDATE')
     xs_update_attr = ADSignal('UPDATE_AttrUpdate')
 
-    def setup(self, path, prefix, num_points,
-              external=True, create_dirs=True,
-              settle_time=0.1):
-        if not external:
-            raise NotImplementedError('TODO')
+    def __init__(self, prefix, file_path='', ioc_file_path='', **kwargs):
+        AreaDetector.__init__(self, prefix, **kwargs)
 
-        if create_dirs:
-            try:
-                makedirs(path)
-            except OSError:
-                pass
+        self.filestore = Xspress3FileStore(self, self._base_prefix,
+                                           stats=[], shutter=None,
+                                           file_path=file_path,
+                                           ioc_file_path=ioc_file_path,
+                                           name=self.name)
 
-        self.acquire.put(0)
-        self.xs_erase.put(1)
-        time.sleep(settle_time)
+    def scan_started(self, scan):
+        self._num_scan_points = scan.npts + 1
 
-        self.num_images.put(num_points)
-        self.hdf5.file_path.put(path)
-        self.hdf5.file_name.put(prefix)
-        self.hdf5.file_number.put(1)
-        self.trigger_mode.put(3)  # TTL Veto Only
-
-        time.sleep(settle_time)
-        self.acquire.put(1)
-        time.sleep(settle_time)
-        self.hdf5.capture.put(1)
-
-    def teardown(self):
+    def fly_teardown(self):
         acquiring = self.hdf5.num_captured.value < self.num_images.value
         if acquiring or self.acquire.value:
             logger.warning("xspress3 didn't acquire all frames; stopping "
@@ -104,7 +221,7 @@ class Xspress3Detector(AreaDetector):
             self.hdf5.capture.put(0)
             time.sleep(0.1)
 
-        self.trigger_mode.put(1)  # internal
+        # self.filestore.deconfigure()
 
     def get_hdf5_rois(self, fn, rois, wait=True,
                       data_key=XRF_DATA_KEY):
@@ -142,39 +259,8 @@ class Xspress3Detector(AreaDetector):
                               ev_high=roi_info.ev_high, data=roi)
 
     @property
-    def xsp3_hdf5(self):
-        base_path = self.hdf5.file_path.value
-        file_name = self.hdf5.file_name.value
-        template = self.hdf5.file_template.value
-        next_number = self.hdf5.file_number.value
-        file_num = next_number - 1
-        return template % (base_path, file_name, file_num)
-
-    @property
     def filestore_id(self):
-        return self._fs_id
-
-    def filestore_setup(self, desc):
-        self._fs_id = fs_api.insert_resource('xsp3', self.xsp3_hdf5)
-        _spectra_desc = {'source': 'FileStore:{0.id!s}'.format(self._fs_id),
-                         'external': 'FILESTORE:',
-                         'dtype': 'array',
-                         }
-
-        for chan in range(1, 9):
-            desc['xsp3_ch{}'.format(chan)] = _spectra_desc
-
-    def filestore_frame(self, timestamp, seq_num, detvals):
-        for chan in range(1, 9):
-            mds_key = 'xsp3_ch{}'.format(chan)
-
-            datum_uid = str(uuid.uuid4())
-            datum_key = 'ch%d_spectrum_%.5d-%s' % (chan, seq_num, datum_uid)
-            datum_args = {'frame': seq_num, 'channel': chan}
-            fs_api.insert_datum(self._fs_id, datum_key, datum_args)
-            detvals[mds_key] = {'timestamp': timestamp,
-                                'value': datum_key,
-                                }
+        return self.filestore._filestore_res
 
 
 class Xspress3ROI(object):
@@ -218,9 +304,9 @@ class Xspress3ROI(object):
                'ev_high={0.ev_high}, data={0.data!r})'.format(self)
 
 
-class Xspress3HDF5Handler(_HDF5HandlerBase):
-    specs = {'XSP3'} | _HDF5HandlerBase.specs
-    HANDLER_NAME = 'xsp3'
+class Xspress3HDF5Handler(HandlerBase):
+    specs = {'XSP3'} | HandlerBase.specs
+    HANDLER_NAME = 'XSP3'
 
     def __init__(self, filename, key=XRF_DATA_KEY):
         if isinstance(filename, h5py.File):
@@ -231,7 +317,23 @@ class Xspress3HDF5Handler(_HDF5HandlerBase):
             self._file = None
         self._key = key
         self._dataset = None
+
         self.open()
+
+    def open(self):
+        if self._file:
+            return
+
+        self._file = h5py.File(self._filename, 'r')
+
+    def close(self):
+        super(Xspress3HDF5Handler, self).close()
+        self._file.close()
+        self._file = None
+
+    @property
+    def dataset(self):
+        return self._dataset
 
     def __call__(self, frame=None, channel=None):
         # Don't read out the dataset until it is requested for the first time.
