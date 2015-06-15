@@ -21,6 +21,21 @@ class ZebraPulse(ADBase):
     time_units = ADSignal('PRE')
     output = ADSignal('OUT')
 
+    def __init__(self, prefix, zebra, index, **kwargs):
+        super(ZebraPulse, self).__init__(prefix, **kwargs)
+
+        self._zebra = zebra
+        self._index = index
+
+        input_edge = {1: '{}POLARITY:BC',
+                      2: '{}POLARITY:BD',
+                      3: '{}POLARITY:BE',
+                      4: '{}POLARITY:BF',
+                      }
+
+        self.input_edge = EpicsSignal(input_edge[index].format(zebra._prefix),
+                                      alias='input_edge')
+
 
 class ZebraFrontOutput(ADBase):
     _html_docs = ['']
@@ -143,7 +158,8 @@ class Zebra(ADBase):
     def __init__(self, *args, **kwargs):
         super(Zebra, self).__init__(*args, **kwargs)
 
-        self.pulse = {i: ZebraPulse('{}PULSE{}_'.format(self._prefix, i))
+        self.pulse = {i: ZebraPulse('{}PULSE{}_'.format(self._prefix, i),
+                                    self, i)
                       for i in range(1, 5)}
         self.output = {i: ZebraFrontOutput('{}OUT{}_'.format(self._prefix, i))
                        for i in range(1, 5)}
@@ -164,46 +180,6 @@ class Zebra(ADBase):
         pass
 
 
-class ZebraPulseDetector(SignalDetector):
-    def __init__(self, zebra, trigger=None, pulse=1,
-                 trigger_value=None, **kwargs):
-        if trigger is None:
-            trigger = zebra.soft_input1
-        if trigger_value is None:
-            trigger_value = (1, 0)
-
-        self._pulse_idx = pulse
-        self._pulse = zebra.pulse[pulse].output
-        self._pulse._name = '{}_pulse{}'.format(zebra.name, pulse)
-        self._trigger = trigger
-        self._trigger_value = trigger_value
-        self._zebra = zebra
-
-        super(ZebraPulseDetector, self).__init__(signal=self._pulse, **kwargs)
-
-    def _run(self, status):
-        time.sleep(self.wait_time + 0.01)
-        status._finished()
-        self._done_acquiring()
-
-    @property
-    def wait_time(self):
-        pulse = self._zebra.pulse[self._pulse_idx]
-        return pulse.width.value + pulse.delay.value
-
-    def acquire(self, **kwargs):
-        """Start acquisition"""
-        for value in self._trigger_value:
-            self._trigger.put(value)
-            time.sleep(0.05)
-
-        status = DetectorStatus(self)
-        self._acq_thread = threading.Thread(target=self._run, args=(status, ))
-        self._acq_thread.daemon = True
-        self._acq_thread.start()
-        return status
-
-
 class HXNZebra(Zebra):
     def __init__(self, *args, **kwargs):
         super(HXNZebra, self).__init__(*args, **kwargs)
@@ -222,20 +198,34 @@ class HXNZebra(Zebra):
             time.sleep(0.1)
 
     def step_scan(self, scan):
-        self.pulse[1].input1 = self.SOFT_IN1
+        # Scaler triggers all detectors
+        # Scaler, output mode 1, LNE (output 5) connected to Zebra IN1_TTL
+        # Pulse 1 has pulse width set to the preset_time
+
+        # OUT1_TTL Timepix
+        # OUT2_TTL Scaler 1 inhibit
+        #
+        # OUT3_TTL Scaler 1 gate
+        # OUT4_TTL Xspress3
+        self.pulse[1].input1 = self.IN1_TTL
 
         if self.preset_time is not None:
             self.pulse[1].width = self.preset_time
             self.pulse[1].delay = 0.0
+            self.pulse[1].input_edge.value = 1
+
+        # To be used in regular scaler mode, scaler 1 has to have
+        # inhibit cleared and counting enabled:
+        self.soft_input4.value = 1
 
         self.output[1].ttl = self.PULSE1
-        self.output[2].ttl = self.PULSE1
+        self.output[2].ttl = self.SOFT_IN4
 
         self.gate[2].input1 = self.PULSE1
         self.gate[2].input2 = self.PULSE1
         self._set_input_edges(self.gate[2], 1, 0)
 
-        self.output[3].ttl = self.GATE2
+        self.output[3].ttl = self.SOFT_IN4
         self.output[4].ttl = self.GATE2
 
     def fly_scan(self, scan):
