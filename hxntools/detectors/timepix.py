@@ -5,6 +5,8 @@ import time
 import logging
 
 from ophyd.controls.areadetector.detectors import (AreaDetector, ADSignal)
+from ophyd.controls.area_detector import AreaDetectorFileStoreTIFF
+from .utils import makedirs
 
 
 logger = logging.getLogger(__name__)
@@ -20,6 +22,43 @@ if USE_TPX_RAW:
     _tpx_buf = TpxRawLog()
     _tpx_raw_log = pympx.MpxFileLogger(_tpx_buf)
     _tpx_raw = pympx.MpxModule(0, 3, 0, pympx.MPIX_ROWS, 0, _tpx_raw_log)
+
+
+class TimepixFileStore(AreaDetectorFileStoreTIFF):
+    def __init__(self, det, basename, **kwargs):
+        super(TimepixFileStore, self).__init__(basename, cam='cam1:',
+                                               **kwargs)
+        self._det = det
+
+    def _extra_AD_configuration(self):
+        self._det.array_callbacks.put('Enable')
+        self._det.num_images.put(1)
+        self._det.tiff1.auto_increment.put(1)
+        self._det.tiff1.auto_save.put(1)
+        self._det.tiff1.num_capture.put(self._num_scan_points)
+        self._det.tiff1.file_write_mode.put(2)
+        self._det.tiff1.enable.put(1)
+        self._det.tiff1.capture.put(1)
+
+    def deconfigure(self, *args, **kwargs):
+        # Wait for the last frame
+        super(TimepixFileStore, self).deconfigure(*args, **kwargs)
+
+        self.set_scan(None)
+        self._det.tiff1.capture.put(0)
+
+    def _make_filename(self, **kwargs):
+        super(TimepixFileStore, self)._make_filename(**kwargs)
+
+        makedirs(self._store_file_path)
+
+    def set_scan(self, scan):
+        self._scan = scan
+
+        if scan is None:
+            return
+
+        self._num_scan_points = scan.npts + 1
 
 
 class TimepixDetector(AreaDetector):
@@ -79,8 +118,20 @@ class TimepixDetector(AreaDetector):
     tpx_system_id = ADSignal('TPXSystemID')
     tpx_trigger = ADSignal('TPXTrigger')
 
+    def __init__(self, prefix, file_path='', ioc_file_path='', **kwargs):
+        AreaDetector.__init__(self, prefix, **kwargs)
+
+        self.filestore = TimepixFileStore(self, self._base_prefix,
+                                          stats=[], shutter=None,
+                                          file_path=file_path,
+                                          ioc_file_path=ioc_file_path,
+                                          name=self.name)
+
     def fly_configure(self, path, prefix, num_points,
                       raw=False, external=True, create_dirs=True):
+        # NOTE: due to timepix IOC-related issues, can't use external
+        # triggering reliably, so step scan and fly scan configuration
+        # are different
         if not external:
             raise NotImplementedError('TODO')
 

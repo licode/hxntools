@@ -13,41 +13,25 @@ from ophyd.controls.areadetector.detectors import (AreaDetector, ADSignal)
 from ophyd.controls.area_detector import AreaDetectorFileStore
 from ophyd.controls.detector import DetectorStatus
 
+from .utils import makedirs
+
 logger = logging.getLogger(__name__)
 
 FMT_ROI_KEY = 'entry/instrument/detector/NDAttributes/CHAN{}ROI{}'
 XRF_DATA_KEY = 'entry/instrument/detector/data'
 
 
-def makedirs(path, mode=0777):
-    '''Recursively make directories and set permissions'''
-    # Permissions not working with os.makedirs -
-    # See: http://stackoverflow.com/questions/5231901
-    if not path or os.path.exists(path):
-        return []
-
-    head, tail = os.path.split(path)
-    ret = makedirs(head, mode)
-    try:
-        os.mkdir(path)
-    except OSError as ex:
-        if 'File exists' not in str(ex):
-            raise
-
-    os.chmod(path, mode)
-    ret.append(path)
-    return ret
-
-
 class Xspress3FileStore(AreaDetectorFileStore):
     def __init__(self, det, basename, file_template='%s%s_%6.6d.h5',
                  **kwargs):
-        self.file_template = file_template
         super(Xspress3FileStore, self).__init__(basename, cam='',
                                                 **kwargs)
 
         self._det = det
+        # Use the EpicsSignal file_template from the detector
         self._file_template = det.hdf5.file_template
+        # (_file_template is used in _make_filename, etc)
+        self.file_template = file_template
 
     def _reset_state(self):
         super(Xspress3FileStore, self)._reset_state()
@@ -91,12 +75,13 @@ class Xspress3FileStore(AreaDetectorFileStore):
             time.sleep(0.1)
 
         self._det.trigger_mode.put('Internal')  # internal
+        self.set_scan(None)
 
         super(Xspress3FileStore, self).deconfigure(*args, **kwargs)
 
     def configure(self, *args, **kwargs):
         # TODO: why doesn't configure at least pass the scan instance?
-        num_points = self._det._num_scan_points
+        num_points = self._num_scan_points
 
         self._det.acquire.put(0)
         self._det.xs_erase.put(1)
@@ -162,6 +147,14 @@ class Xspress3FileStore(AreaDetectorFileStore):
     def ioc_filename(self):
         return self._ioc_filename
 
+    def set_scan(self, scan):
+        self._scan = scan
+
+        if scan is None:
+            return
+
+        self._num_scan_points = scan.npts + 1
+
 
 class Xspress3Detector(AreaDetector):
     _html_docs = ['']
@@ -206,9 +199,6 @@ class Xspress3Detector(AreaDetector):
                                            file_path=file_path,
                                            ioc_file_path=ioc_file_path,
                                            name=self.name)
-
-    def set_scan(self, scan):
-        self._num_scan_points = scan.npts + 1
 
     def get_hdf5_rois(self, fn, rois, wait=True,
                       data_key=XRF_DATA_KEY):
