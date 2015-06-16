@@ -1,5 +1,5 @@
 
-from ophyd.userapi.scan_api import Scan, AScan, DScan, estimate
+from ophyd.userapi.scan_api import Scan, AScan, DScan, Count, estimate
 from prettytable import PrettyTable
 from collections import OrderedDict
 
@@ -47,6 +47,24 @@ def setup_scan(scan):
 
     zebra = from_ipython('zebra')
     zebra.step_scan(scan)
+
+
+class HXNCount(Count):
+    @property
+    def npts(self):
+        return 0
+
+    def run(self, integration_time=None, **kwargs):
+        if integration_time is not None:
+            synchronize = from_ipython('synchronize')
+            synchronize(self.detectors, integration_time)
+
+        super(HXNCount, self).run(**kwargs)
+
+    def configure_detectors(self, *args, **kwargs):
+        setup_scan(self)
+
+        super(HXNCount, self).configure_detectors(*args, **kwargs)
 
 
 class HXNDScan(DScan, ComputeScan):
