@@ -1,7 +1,9 @@
 
-from ophyd.userapi.scan_api import Scan, AScan, DScan, Count, estimate
+from ophyd.userapi.scan_api import Scan, AScan, DScan, estimate
 from prettytable import PrettyTable
 from collections import OrderedDict
+
+from IPython import get_ipython
 
 
 class ComputeScan(Scan):
@@ -13,7 +15,7 @@ class ComputeScan(Scan):
         x = getattr(self.data[-1], self.positioners[0].name)
         positioners = [pos.name for pos in self.positioners]
         detectors = sorted([det for det in self.data[-1].data_dict.keys()
-                            if not det in positioners])
+                            if det not in positioners])
         estimates = {}
         for pos in positioners:
             estimates[pos] = {}
@@ -33,12 +35,38 @@ class ComputeScan(Scan):
         print_estimate_table_det_rows(estimates)
 
 
+def from_ipython(key):
+    user_ns = get_ipython().user_ns
+    return user_ns[key]
+
+
+def setup_scan(scan):
+    for det in scan.detectors:
+        if hasattr(det, 'set_scan'):
+            det.set_scan(scan)
+
+    zebra = from_ipython('zebra')
+    zebra.step_scan(scan)
+
+
 class HXNDScan(DScan, ComputeScan):
-    pass
+    def configure_detectors(self, *args, **kwargs):
+        setup_scan(self)
+
+        super(HXNDScan, self).configure_detectors(*args, **kwargs)
+
+    def post_scan(self):
+        super(HXNDScan, self).post_scan()
 
 
 class HXNAScan(AScan, ComputeScan):
-    pass
+    def configure_detectors(self, *args, **kwargs):
+        setup_scan(self)
+
+        super(HXNAScan, self).configure_detectors(*args, **kwargs)
+
+    def post_scan(self):
+        super(HXNAScan, self).post_scan()
 
 
 def print_estimate_table_det_rows(estimate_dict):
@@ -152,7 +180,3 @@ def print_estimate_table_det_cols(estimate_dict):
             table.add_row(row)
         print("Estimates for x axis: {}".format(pos))
         print(table)
-
-
-
-
