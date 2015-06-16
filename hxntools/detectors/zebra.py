@@ -1,11 +1,9 @@
 from __future__ import print_function
 import logging
-import threading
 import time
 
 from ophyd.controls.areadetector.detectors import (ADBase, ADSignal)
 from ophyd.controls import EpicsSignal
-from ophyd.controls.detector import (SignalDetector, DetectorStatus)
 
 logger = logging.getLogger(__name__)
 

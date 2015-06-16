@@ -79,8 +79,8 @@ class TimepixDetector(AreaDetector):
     tpx_system_id = ADSignal('TPXSystemID')
     tpx_trigger = ADSignal('TPXTrigger')
 
-    def setup(self, path, prefix, num_points,
-              raw=False, external=True, create_dirs=True):
+    def fly_configure(self, path, prefix, num_points,
+                      raw=False, external=True, create_dirs=True):
         if not external:
             raise NotImplementedError('TODO')
 
@@ -123,7 +123,7 @@ class TimepixDetector(AreaDetector):
 
         self.acquire.put(1)
 
-    def teardown(self):
+    def fly_deconfigure(self):
         if self.tpx_save_raw.value == 1:
             self.tpx_save_raw = 0
             # self.dump_raw_files()
@@ -133,6 +133,9 @@ class TimepixDetector(AreaDetector):
             # timepix1.image_mode = 'Continuous'
 
     def dump_raw_files(self):
+        raise NotImplementedError()
+
+        # TODO: filenames, etc are wrong
         # timepix raw file *saving* does not work reliably
         logger.debug('Timepix 1 file: %s', self.tpx1_file)
 

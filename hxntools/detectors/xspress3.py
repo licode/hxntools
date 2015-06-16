@@ -136,7 +136,8 @@ class Xspress3FileStore(AreaDetectorFileStore):
 
         # TODO: describe is called prior to configure, so the filestore resource
         #       is not yet generated
-        # spec_desc = {'source': 'FileStore:{0.id!s}'.format(self._filestore_res),
+        # spec_desc = {'source':
+        #               'FileStore:{0.id!s}'.format(self._filestore_res),
         spec_desc = {'source': 'FileStore:',
                      'external': 'FILESTORE:',
                      'dtype': 'array',
@@ -152,9 +153,6 @@ class Xspress3FileStore(AreaDetectorFileStore):
     def _insert_fs_resource(self):
         return fs_api.insert_resource(Xspress3HDF5Handler.HANDLER_NAME,
                                       self.store_filename, {})
-
-    def filestore_frame(self, timestamp, seq_num, detvals):
-        pass
 
     @property
     def store_filename(self):
@@ -209,19 +207,8 @@ class Xspress3Detector(AreaDetector):
                                            ioc_file_path=ioc_file_path,
                                            name=self.name)
 
-    def scan_started(self, scan):
+    def set_scan(self, scan):
         self._num_scan_points = scan.npts + 1
-
-    def fly_teardown(self):
-        acquiring = self.hdf5.num_captured.value < self.num_images.value
-        if acquiring or self.acquire.value:
-            logger.warning("xspress3 didn't acquire all frames; stopping "
-                           "acquisition/file saving")
-            self.acquire.put(0)  # stop acquire
-            self.hdf5.capture.put(0)
-            time.sleep(0.1)
-
-        # self.filestore.deconfigure()
 
     def get_hdf5_rois(self, fn, rois, wait=True,
                       data_key=XRF_DATA_KEY):
