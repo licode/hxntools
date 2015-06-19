@@ -185,6 +185,9 @@ class HXNZebra(Zebra):
         # NOTE: preset_time comes from sync_dscan
         self.preset_time = None
 
+        self.scaler1_output_mode = EpicsSignal('XF:03IDC-ES{Sclr:1}OutputMode',
+                                               name='sclr1_outputmode')
+
     def _set_input_edges(self, gate, edge1, edge2):
         edge1, edge2 = int(edge1), int(edge2)
         while gate.input1_edge.value != edge1:
@@ -206,11 +209,16 @@ class HXNZebra(Zebra):
         # OUT3_TTL Scaler 1 gate
         # OUT4_TTL Xspress3
         self.pulse[1].input1 = self.IN1_TTL
-
+        
         if self.preset_time is not None:
             self.pulse[1].width = self.preset_time
-            self.pulse[1].delay = 0.0
-            self.pulse[1].input_edge.value = 1
+        
+        if self.scaler1_output_mode.get(as_string=True) != 'Mode 1':
+            logger.info('Setting scaler 1 to output mode 1')
+            self.scaler1_output_mode.put('Mode 1')
+
+        self.pulse[1].delay = 0.0
+        self.pulse[1].input_edge.value = 1
 
         # To be used in regular scaler mode, scaler 1 has to have
         # inhibit cleared and counting enabled:
@@ -221,7 +229,7 @@ class HXNZebra(Zebra):
 
         self.gate[2].input1 = self.PULSE1
         self.gate[2].input2 = self.PULSE1
-        self._set_input_edges(self.gate[2], 1, 0)
+        self._set_input_edges(self.gate[2], 0, 1)
 
         self.output[3].ttl = self.SOFT_IN4
         self.output[4].ttl = self.GATE2
