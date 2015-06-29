@@ -187,6 +187,8 @@ class HXNZebra(Zebra):
 
         self.scaler1_output_mode = EpicsSignal('XF:03IDC-ES{Sclr:1}OutputMode',
                                                name='sclr1_outputmode')
+        self.scaler1_stopall = EpicsSignal('XF:03IDC-ES{Sclr:1}StopAll',
+                                           name='sclr1_stopall')
 
     def _set_input_edges(self, gate, edge1, edge2):
         edge1, edge2 = int(edge1), int(edge2)
@@ -216,6 +218,9 @@ class HXNZebra(Zebra):
         if self.scaler1_output_mode.get(as_string=True) != 'Mode 1':
             logger.info('Setting scaler 1 to output mode 1')
             self.scaler1_output_mode.put('Mode 1')
+        
+        # Ensure that the scaler isn't counting in mcs mode for any reason
+        self.scaler1_stopall.put(1)
 
         self.pulse[1].delay = 0.0
         self.pulse[1].input_edge.value = 1
