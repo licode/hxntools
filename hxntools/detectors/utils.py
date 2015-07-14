@@ -1,5 +1,6 @@
 from __future__ import print_function
 import os
+import numpy as np
 
 
 def makedirs(path, mode=0777):
@@ -20,3 +21,13 @@ def makedirs(path, mode=0777):
     os.chmod(path, mode)
     ret.append(path)
     return ret
+
+
+def get_total_scan_points(points):
+    '''
+    points : ndarray, list, or integer
+
+    returns: product of all points
+    '''
+    points = np.asarray(points)
+    return np.prod(points)

@@ -6,7 +6,7 @@ import logging
 
 from ophyd.controls.areadetector.detectors import (AreaDetector, ADSignal)
 from ophyd.controls.area_detector import AreaDetectorFileStoreTIFF
-from .utils import makedirs
+from .utils import (makedirs, get_total_scan_points)
 
 
 logger = logging.getLogger(__name__)
@@ -31,11 +31,13 @@ class TimepixFileStore(AreaDetectorFileStoreTIFF):
         self._det = det
 
     def _extra_AD_configuration(self):
+        num_points = get_total_scan_points(self._num_scan_points)
+
         self._det.array_callbacks.put('Enable')
         self._det.num_images.put(1)
         self._det.tiff1.auto_increment.put(1)
         self._det.tiff1.auto_save.put(1)
-        self._det.tiff1.num_capture.put(self._num_scan_points)
+        self._det.tiff1.num_capture.put(num_points)
         self._det.tiff1.file_write_mode.put(2)
         self._det.tiff1.enable.put(1)
         self._det.tiff1.capture.put(1)

@@ -13,7 +13,7 @@ from ophyd.controls.areadetector.detectors import (AreaDetector, ADSignal)
 from ophyd.controls.area_detector import AreaDetectorFileStore
 from ophyd.controls.detector import DetectorStatus
 
-from .utils import makedirs
+from .utils import (makedirs, get_total_scan_points)
 
 logger = logging.getLogger(__name__)
 
@@ -81,19 +81,28 @@ class Xspress3FileStore(AreaDetectorFileStore):
 
     def configure(self, *args, **kwargs):
         # TODO: why doesn't configure at least pass the scan instance?
-        num_points = self._num_scan_points
-
+        num_points = get_total_scan_points(self._num_scan_points)
+        
+        logger.debug('Stopping xspress3 acquisition')
         self._det.acquire.put(0)
+
+        logger.debug('Erasing old spectra')
         self._det.xs_erase.put(1)
         time.sleep(0.1)
 
+        logger.debug('Setting up triggering')
         self._det.trigger_mode.put('TTL Veto Only')
         self._det.num_images.put(num_points)
         # self._det.trigger_mode.put('Internal')
 
+        logger.debug('Configuring other filestore stuff')
         super(Xspress3FileStore, self).configure(*args, **kwargs)
 
+        logger.debug('Making the filename')
         self._make_filename(seq=0)
+
+        logger.debug('Setting up hdf5 plugin: ioc path: %s filename: %s', 
+                     self._ioc_file_path, self._filename) 
         self._det.hdf5.file_template.put(self.file_template, wait=True)
         self._det.hdf5.file_number.put(0)
         self._det.hdf5.enable.put(1)
@@ -104,7 +113,10 @@ class Xspress3FileStore(AreaDetectorFileStore):
             raise IOError("Path {} does not exits on IOC!! Please Check"
                           .format(self._det.hdf5.file_path.value))
 
+        logger.debug('Inserting the filestore resource')
         self._filestore_res = self._insert_fs_resource()
+
+        logger.debug('Starting acquisition')
         self._det.acquire.put(1, wait=False)
         self._det.hdf5.capture.put(1, wait=False)
 
