@@ -245,7 +245,8 @@ class Xspress3Detector(AreaDetector):
         for roi_info in rois:
             roi = handler.get_roi(roi_info, max_points=num_points)
             yield Xspress3ROI(chan=roi_info.chan, ev_low=roi_info.ev_low,
-                              ev_high=roi_info.ev_high, data=roi)
+                              ev_high=roi_info.ev_high, name=roi_info.name,
+                              data=roi)
 
     @property
     def filestore_id(self):
@@ -253,13 +254,19 @@ class Xspress3Detector(AreaDetector):
 
 
 class Xspress3ROI(object):
-    def __init__(self, chan=1, ev_low=1, ev_high=1000, data=None):
+    def __init__(self, chan=1, ev_low=1, ev_high=1000, data=None,
+                 name=None):
         self._chan = chan
         self._ev_low = ev_low
         self._ev_high = ev_high
         self._bin_low = self._ev_to_bin(ev_low)
         self._bin_high = self._ev_to_bin(ev_high)
         self._data = data
+        self._name = name
+
+    @property
+    def name(self):
+        return self._name
 
     @property
     def data(self):
@@ -290,7 +297,8 @@ class Xspress3ROI(object):
 
     def __repr__(self):
         return '{0.__class__.__name__}(chan={0.chan}, ev_low={0.ev_low}, ' \
-               'ev_high={0.ev_high}, data={0.data!r})'.format(self)
+               'ev_high={0.ev_high}, name={0.name!r}, '\
+               'data={0.data!r})'.format(self)
 
 
 class Xspress3HDF5Handler(HandlerBase):
