@@ -163,7 +163,8 @@ class Zebra(ADBase):
                        for i in range(1, 5)}
 
         for i in range(5, 9):
-            self.output[i] = ZebraRearOutput('{}OUT{}_'.format(self._prefix, i))
+            out_prefix = '{}OUT{}_'.format(self._prefix, i)
+            self.output[i] = ZebraRearOutput(out_prefix)
 
         self.gate = {i: ZebraGate('{}GATE{}_'.format(self._prefix, i), self, i)
                      for i in range(1, 5)}
@@ -211,14 +212,14 @@ class HXNZebra(Zebra):
         # OUT3_TTL Scaler 1 gate
         # OUT4_TTL Xspress3
         self.pulse[1].input1 = self.IN1_TTL
-        
+
         if self.preset_time is not None:
             self.pulse[1].width = self.preset_time
-        
+
         if self.scaler1_output_mode.get(as_string=True) != 'Mode 1':
             logger.info('Setting scaler 1 to output mode 1')
             self.scaler1_output_mode.put('Mode 1')
-        
+
         # Ensure that the scaler isn't counting in mcs mode for any reason
         self.scaler1_stopall.put(1)
 
@@ -229,6 +230,9 @@ class HXNZebra(Zebra):
         # inhibit cleared and counting enabled:
         self.soft_input4.value = 1
 
+        # Timepix
+        # self.output[1].ttl = self.PULSE1
+        # Merlin
         self.output[1].ttl = self.PULSE1
         self.output[2].ttl = self.SOFT_IN4
 
@@ -239,12 +243,19 @@ class HXNZebra(Zebra):
         self.output[3].ttl = self.SOFT_IN4
         self.output[4].ttl = self.GATE2
 
+        # Merlin LVDS
+        self.output[1].lvds = self.PULSE1
+
     def fly_scan(self, scan):
         self.gate[1].input1 = self.IN3_OC
         self.gate[1].input2 = self.IN3_OC
         self._set_input_edges(self.gate[1], 1, 0)
 
-        self.output[1].ttl = self.GATE1
+        # timepix:
+        # self.output[1].ttl = self.GATE1
+        # merlin:
+        # (Merlin is now on TTL 1 output, replacing timepix 1)
+        self.output[1].ttl = self.GATE2
         self.output[2].ttl = self.GATE1
 
         self.gate[2].input1 = self.IN3_OC
@@ -253,3 +264,6 @@ class HXNZebra(Zebra):
 
         self.output[3].ttl = self.GATE2
         self.output[4].ttl = self.GATE2
+
+        # Merlin LVDS
+        # self.output[1].lvds = self.GATE2
