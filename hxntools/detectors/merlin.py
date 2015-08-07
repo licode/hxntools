@@ -1,7 +1,5 @@
 from __future__ import print_function
-import sys
 import logging
-import time
 
 from ophyd.controls.areadetector.detectors import AreaDetector
 from ophyd.controls.area_detector import AreaDetectorFileStoreTIFF
@@ -17,23 +15,27 @@ class MerlinFileStore(AreaDetectorFileStoreTIFF):
                                               **kwargs)
         self._det = det
 
-        if not det.tiff1.file_template.value:
-            det.tiff1.file_template.put('%s%s_%6.6d.tiff')
-
     def _extra_AD_configuration(self):
         det = self._det
 
         num_points = get_total_scan_points(self._num_scan_points)
 
         det.array_callbacks.put('Enable')
-        det.num_images.put(num_points)
-        det.image_mode.put('Multiple')
-        det.trigger_mode.put('External')
 
-        # NOTE: these values appear to specify the minima for the
-        #       external triggering
-        det.acquire_time.put(0.005)
-        det.acquire_period.put(0.006)
+        scan = self._scan
+        if hasattr(scan, 'external_triggering') and scan.external_triggering:
+            det.num_images.put(num_points)
+            det.image_mode.put('Multiple')
+            det.trigger_mode.put('External')
+            # NOTE: these values specify a debounce time for external
+            #       triggering so they should be set to < 0.5 the expected
+            #       exposure time
+            det.acquire_time.put(0.005)
+            det.acquire_period.put(0.006)
+        else:
+            det.num_images.put(1)
+            det.image_mode.put('Single')
+            det.trigger_mode.put('Internal')
 
         tiff1 = det.tiff1
         tiff1.auto_increment.put(1)
@@ -43,14 +45,11 @@ class MerlinFileStore(AreaDetectorFileStoreTIFF):
         tiff1.enable.put(1)
         tiff1.capture.put(1)
 
-        det.acquire.put(1)
-
         # print('** Please ensure Merlin is in external triggering (LVDS) '
         #       'mode **', file=sys.stderr)
         # # NOTE: this is not supported by the ascii protocol (and hence the
         # #       EPICS IOC) for some reason
         # switching timepix TTL to this for now
-        # time.sleep(2)
 
     def deconfigure(self, *args, **kwargs):
         super(MerlinFileStore, self).deconfigure(*args, **kwargs)
