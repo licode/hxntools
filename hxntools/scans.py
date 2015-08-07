@@ -6,6 +6,7 @@ import time as ttime
 from IPython import get_ipython
 import epics
 
+
 class ComputeScan(Scan):
     def __call__(self, *args, **kwargs):
         super(ComputeScan, self).__call__(*args, **kwargs)
@@ -67,14 +68,19 @@ class HXNCount(Count):
         super(HXNCount, self).configure_detectors(*args, **kwargs)
 
 
+OPEN_SHUTTERS = False
+
+
 class HXNDScan(DScan, ComputeScan):
     def pre_scan(self):
-        # open the shutter before the scan
-        epics.caput('XF:03IDB-PPS{PSh}Cmd:Opn-Cmd', 1)
-        while epics.caget('XF:03IDB-PPS{PSh}Sts:Cls-Sts') == 0:
-            print('sleeping until shutter is open')
-            ttime.sleep(0.1)
-            
+        super(HXNDScan, self).pre_scan()
+
+        if OPEN_SHUTTERS:
+            # open the shutter before the scan
+            epics.caput('XF:03IDB-PPS{PSh}Cmd:Opn-Cmd', 1)
+            while epics.caget('XF:03IDB-PPS{PSh}Sts:Cls-Sts') == 0:
+                print('sleeping until shutter is open')
+                ttime.sleep(0.1)
 
     def configure_detectors(self, *args, **kwargs):
         setup_scan(self)
@@ -83,7 +89,8 @@ class HXNDScan(DScan, ComputeScan):
 
     def post_scan(self):
         super(HXNDScan, self).post_scan()
-        epics.caput('XF:03IDB-PPS{PSh}Cmd:Cls-Cmd', 1)
+        if OPEN_SHUTTERS:
+            epics.caput('XF:03IDB-PPS{PSh}Cmd:Cls-Cmd', 1)
 
 
 class HXNAScan(AScan, ComputeScan):
