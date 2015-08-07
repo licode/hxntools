@@ -1,6 +1,7 @@
 from __future__ import print_function
 import logging
 
+from ophyd.controls.ophydobj import OphydObject
 from ophyd.controls import EpicsSignal
 from ophyd.controls.detector import (Detector, DetectorStatus)
 
@@ -12,13 +13,13 @@ sr_beam_current = EpicsSignal('SR:C03-BI{DCCT:1}I:Real-I', rw=False,
                               name='sr_beam_current')
 
 
-class BeamStatusDetector(Detector):
+class BeamStatusDetector(OphydObject, Detector):
     def __init__(self, *args, **kwargs):
         self._shutter_status = kwargs.pop('shutter_status', sr_shutter_status)
         self._beam_current = kwargs.pop('beam_current', sr_beam_current)
         self._min_current = kwargs.pop('min_current', 100.0)
 
-        Detector.__init__(self, *args, **kwargs)
+        OphydObject.__init__(self, *args, **kwargs)
 
         self._shutter_ok = False
         self._current_ok = False
@@ -35,6 +36,11 @@ class BeamStatusDetector(Detector):
             status.done = True
         else:
             self._statuses.append(status)
+
+        if not status.done:
+            logger.warning('---')
+            logger.warning('Waiting for beam status to change...')
+            logger.warning('---')
 
         return status
 
@@ -79,7 +85,7 @@ class BeamStatusDetector(Detector):
 
     def read(self):
         del self._statuses[:]
-        return [self._beam_current.read(), self._shutter_status.read()]
+        return self._beam_current.read()
 
     def describe(self):
-        return [self._beam_current.describe(), self._shutter_status.describe()]
+        return self._beam_current.describe()
