@@ -74,8 +74,12 @@ class Xspress3FileStore(AreaDetectorFileStore):
             logger.warning('Still capturing data .... waiting.')
             time.sleep(0.1)
 
-        self._det.trigger_mode.put('Internal')  # internal
+        self._det.trigger_mode.put('Internal')
         self.set_scan(None)
+        
+        # TODO
+        self._old_image_mode = self._image_mode.value
+        self._old_acquire = self._acquire.value
 
         super(Xspress3FileStore, self).deconfigure(*args, **kwargs)
 
