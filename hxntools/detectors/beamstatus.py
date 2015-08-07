@@ -22,7 +22,7 @@ class BeamStatusDetector(Detector):
 
         self._shutter_ok = False
         self._current_ok = False
-        self._last_status = False
+        self._last_status = None
         self._statuses = []
 
         self._shutter_status.subscribe(self._shutter_changed)
