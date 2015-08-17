@@ -2,22 +2,48 @@ from __future__ import print_function
 import logging
 
 from ophyd.controls.areadetector.detectors import AreaDetector
-from ophyd.controls.area_detector import AreaDetectorFileStoreTIFF
+from ophyd.controls.area_detector import AreaDetectorFSIterativeWrite
 from .utils import (makedirs, get_total_scan_points)
+
+import filestore.api as fs
 
 
 logger = logging.getLogger(__name__)
 
 
-class MerlinFileStore(AreaDetectorFileStoreTIFF):
+class MerlinFileStore(AreaDetectorFSIterativeWrite):
     def __init__(self, det, basename, **kwargs):
         super(MerlinFileStore, self).__init__(basename, cam='cam1:',
                                               **kwargs)
         self._det = det
+        self._file_plugin = det.tiff1
+        self.file_template = '%s%s_%6.6d.tiff'
+        self._file_template = self._file_plugin.file_template
 
-    def _extra_AD_configuration(self):
+        # NOTE: hack to get parent classes to work...
+        # NOTE: areadetector array sizes were rearranged to mirror numpy indexing
+        #       so they differ from what AreaDetectorFSIterativeWrite expects
+        self._arraysize0 = self._file_plugin.array_size.signals[1]
+        self._arraysize1 = self._file_plugin.array_size.signals[0]
+
+    def _insert_fs_resource(self):
+        return fs.insert_resource('AD_TIFF', self._store_file_path,
+                                  {'template': self._file_template.value,
+                                   'filename': self._filename,
+                                   'frame_per_point': 1})
+
+    def configure(self, *args, **kwargs):
         det = self._det
 
+        plugin = self._file_plugin
+
+        super(MerlinFileStore, self).configure(*args, **kwargs)
+        # self._image_mode.put(0, wait=True)
+        plugin.file_template.put(self.file_template, wait=True)
+        self._make_filename()
+        plugin.file_path.put(self._ioc_file_path, wait=True)
+        plugin.file_name.put(self._filename, wait=True)
+        plugin.file_number.put(0)
         num_points = get_total_scan_points(self._num_scan_points)
 
         det.array_callbacks.put('Enable')
@@ -37,19 +63,19 @@ class MerlinFileStore(AreaDetectorFileStoreTIFF):
             det.image_mode.put('Single')
             det.trigger_mode.put('Internal')
 
-        tiff1 = det.tiff1
-        tiff1.auto_increment.put(1)
-        tiff1.auto_save.put(1)
-        tiff1.num_capture.put(num_points)
-        tiff1.file_write_mode.put(2)
-        tiff1.enable.put(1)
-        tiff1.capture.put(1)
+        plugin.auto_increment.put(1)
+        plugin.auto_save.put(1)
+        plugin.num_capture.put(num_points)
+        plugin.file_write_mode.put(2)
+        plugin.enable.put(1)
+        plugin.capture.put(1)
 
         # print('** Please ensure Merlin is in external triggering (LVDS) '
         #       'mode **', file=sys.stderr)
         # # NOTE: this is not supported by the ascii protocol (and hence the
         # #       EPICS IOC) for some reason
         # switching timepix TTL to this for now
+        self._filestore_res = self._insert_fs_resource()
 
     def deconfigure(self, *args, **kwargs):
         super(MerlinFileStore, self).deconfigure(*args, **kwargs)
