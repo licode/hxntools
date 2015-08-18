@@ -1,13 +1,10 @@
 from __future__ import print_function
-import os
 import time
 import logging
 import h5py
-import numpy as np
 
 import filestore.api as fs_api
 import uuid
-from filestore.handlers import HandlerBase
 
 from ophyd.controls.areadetector.detectors import (AreaDetector, ADSignal)
 from ophyd.controls.area_detector import AreaDetectorFileStore
@@ -15,10 +12,10 @@ from ophyd.controls.detector import DetectorStatus
 
 from .utils import (makedirs, get_total_scan_points)
 
-logger = logging.getLogger(__name__)
+from ..handlers import Xspress3HDF5Handler
+from ..handlers.xspress3 import XRF_DATA_KEY
 
-FMT_ROI_KEY = 'entry/instrument/detector/NDAttributes/CHAN{}ROI{}'
-XRF_DATA_KEY = 'entry/instrument/detector/data'
+logger = logging.getLogger(__name__)
 
 
 class Xspress3FileStore(AreaDetectorFileStore):
@@ -76,7 +73,7 @@ class Xspress3FileStore(AreaDetectorFileStore):
 
         self._det.trigger_mode.put('Internal')
         self.set_scan(None)
-        
+
         # TODO
         self._old_image_mode = self._image_mode.value
         self._old_acquire = self._acquire.value
@@ -86,7 +83,7 @@ class Xspress3FileStore(AreaDetectorFileStore):
     def configure(self, *args, **kwargs):
         # TODO: why doesn't configure at least pass the scan instance?
         num_points = get_total_scan_points(self._num_scan_points)
-        
+
         logger.debug('Stopping xspress3 acquisition')
         self._det.acquire.put(0)
 
@@ -105,8 +102,8 @@ class Xspress3FileStore(AreaDetectorFileStore):
         logger.debug('Making the filename')
         self._make_filename(seq=0)
 
-        logger.debug('Setting up hdf5 plugin: ioc path: %s filename: %s', 
-                     self._ioc_file_path, self._filename) 
+        logger.debug('Setting up hdf5 plugin: ioc path: %s filename: %s',
+                     self._ioc_file_path, self._filename)
         self._det.hdf5.file_template.put(self.file_template, wait=True)
         self._det.hdf5.file_number.put(0)
         self._det.hdf5.enable.put(1)
@@ -303,69 +300,3 @@ class Xspress3ROI(object):
         return '{0.__class__.__name__}(chan={0.chan}, ev_low={0.ev_low}, ' \
                'ev_high={0.ev_high}, name={0.name!r}, '\
                'data={0.data!r})'.format(self)
-
-
-class Xspress3HDF5Handler(HandlerBase):
-    specs = {'XSP3'} | HandlerBase.specs
-    HANDLER_NAME = 'XSP3'
-
-    def __init__(self, filename, key=XRF_DATA_KEY):
-        if isinstance(filename, h5py.File):
-            self._file = filename
-            self._filename = self._file.filename
-        else:
-            self._filename = filename
-            self._file = None
-        self._key = key
-        self._dataset = None
-
-        self.open()
-
-    def open(self):
-        if self._file:
-            return
-
-        self._file = h5py.File(self._filename, 'r')
-
-    def close(self):
-        super(Xspress3HDF5Handler, self).close()
-        self._file.close()
-        self._file = None
-
-    @property
-    def dataset(self):
-        return self._dataset
-
-    def __call__(self, frame=None, channel=None):
-        # Don't read out the dataset until it is requested for the first time.
-        if not self._dataset:
-            self._dataset = self._file[self._key]
-
-        return self._dataset[frame, channel - 1, :].squeeze()
-
-    def get_roi(self, roi_info, frame=None, max_points=None):
-        if not self._dataset:
-            self._dataset = self._file[self._key]
-
-        chan = roi_info.chan
-        bin_low = roi_info.bin_low
-        bin_high = roi_info.bin_high
-
-        roi = np.sum(self._dataset[:, chan - 1, bin_low:bin_high], axis=1)
-        if max_points is not None:
-            roi = roi[:max_points]
-
-            if len(roi) < max_points:
-                roi = np.pad(roi, ((0, max_points - len(roi)), ), 'constant')
-
-        if frame is not None:
-            roi = roi[frame, :]
-
-        return roi
-
-    def __repr__(self):
-        return '{0.__class__.__name__}(filename={0._filename!r})'.format(self)
-
-
-fs_api.register_handler(Xspress3HDF5Handler.HANDLER_NAME,
-                        Xspress3HDF5Handler)
