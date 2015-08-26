@@ -3,7 +3,7 @@ import os
 import numpy as np
 
 
-def makedirs(path, mode=0777):
+def makedirs(path, mode=0o777):
     '''Recursively make directories and set permissions'''
     # Permissions not working with os.makedirs -
     # See: http://stackoverflow.com/questions/5231901
