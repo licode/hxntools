@@ -2,6 +2,7 @@ from __future__ import print_function
 import time
 import logging
 import h5py
+import epics
 
 import filestore.api as fs_api
 import uuid
@@ -21,18 +22,15 @@ logger = logging.getLogger(__name__)
 class Xspress3FileStore(AreaDetectorFileStore):
     def __init__(self, det, basename, file_template='%s%s_%6.6d.h5',
                  **kwargs):
-        super(Xspress3FileStore, self).__init__(basename, cam='',
-                                                **kwargs)
+        super().__init__(basename, cam='', reset_acquire=False,
+                         use_image_mode=False, **kwargs)
 
         self._det = det
         # Use the EpicsSignal file_template from the detector
         self._file_template = det.hdf5.file_template
         # (_file_template is used in _make_filename, etc)
         self.file_template = file_template
-
-    def _reset_state(self):
-        super(Xspress3FileStore, self)._reset_state()
-        self._id_cache = []
+        self._filestore_res = None
 
     def _insert_data(self, detvals, timestamp, seq_num):
         for chan in range(1, 9):
@@ -53,8 +51,23 @@ class Xspress3FileStore(AreaDetectorFileStore):
         self._abs_trigger_count += 1
         return detvals
 
+    def bulk_read(self, count):
+        ret = {}
+
+        def insert_datum(**datum_args):
+            datum_uid = str(uuid.uuid4())
+            fs_api.insert_datum(self._filestore_res, datum_uid, datum_args)
+            return datum_uid
+
+        for chan in range(1, 9):
+            mds_key = '{}_ch{}'.format(self._det.name, chan)
+            ret[mds_key] = [insert_datum(frame=seq_num, channel=chan)
+                            for seq_num in range(count)]
+
+        return ret
+
     def _make_filename(self, **kwargs):
-        super(Xspress3FileStore, self)._make_filename(**kwargs)
+        super()._make_filename(**kwargs)
 
         makedirs(self._store_file_path)
 
@@ -67,9 +80,12 @@ class Xspress3FileStore(AreaDetectorFileStore):
 
     def deconfigure(self, *args, **kwargs):
         # self._det.hdf5.capture.put(0)
-        while self._det.hdf5.capture.value == 1:
-            logger.warning('Still capturing data .... waiting.')
-            time.sleep(0.1)
+        try:
+            while self._det.hdf5.capture.value == 1:
+                logger.warning('Still capturing data .... waiting.')
+                time.sleep(0.1)
+        except KeyboardInterrupt:
+            logger.warning('Still capturing data .... interrupted.')
 
         self._det.trigger_mode.put('Internal')
         self.set_scan(None)
@@ -78,10 +94,10 @@ class Xspress3FileStore(AreaDetectorFileStore):
         self._old_image_mode = self._image_mode.value
         self._old_acquire = self._acquire.value
 
-        super(Xspress3FileStore, self).deconfigure(*args, **kwargs)
+        super().deconfigure(*args, **kwargs)
 
     def configure(self, *args, **kwargs):
-        # TODO: why doesn't configure at least pass the scan instance?
+        print('configure')
         num_points = get_total_scan_points(self._num_scan_points)
 
         logger.debug('Stopping xspress3 acquisition')
@@ -128,19 +144,21 @@ class Xspress3FileStore(AreaDetectorFileStore):
         return status
 
     def describe(self):
-        size = (self._det.num_images.value,
-                self._det.hdf5.height.value,
-                self._det.hdf5.width.value)
-
         # TODO: describe is called prior to configure, so the filestore resource
         #       is not yet generated
-        # spec_desc = {'source':
-        #               'FileStore:{0.id!s}'.format(self._filestore_res),
-        spec_desc = {'source': 'FileStore:',
-                     'external': 'FILESTORE:',
+        size = (self._det.hdf5.width.value, )
+
+        spec_desc = {'external': 'FILESTORE:',
                      'dtype': 'array',
-                     'size': size,
+                     'shape': size,
                      }
+
+        if self._filestore_res is not None:
+            source = 'FileStore:{0.id!s}'.format(self._filestore_res)
+        else:
+            source = 'FileStore:'
+
+        spec_desc['source'] = source
 
         desc = {}
         for chan in range(1, 9):
@@ -204,7 +222,9 @@ class Xspress3Detector(AreaDetector):
     xs_update = ADSignal('UPDATE')
     xs_update_attr = ADSignal('UPDATE_AttrUpdate')
 
-    def __init__(self, prefix, file_path='', ioc_file_path='', **kwargs):
+    def __init__(self, prefix, file_path='', ioc_file_path='',
+                 default_channels=None, num_roi=16, channel_prefix='Det',
+                 **kwargs):
         AreaDetector.__init__(self, prefix, **kwargs)
 
         self.filestore = Xspress3FileStore(self, self._base_prefix,
@@ -213,8 +233,21 @@ class Xspress3Detector(AreaDetector):
                                            ioc_file_path=ioc_file_path,
                                            name=self.name)
 
-    def get_hdf5_rois(self, fn, rois, wait=True,
+        if default_channels is None:
+            default_channels = [1, 2, 3]
+
+        self.default_channels = list(default_channels)
+        self.num_roi = int(num_roi)
+        self._roi_config = {}
+        self._channel_prefix = channel_prefix
+
+    def get_hdf5_rois(self, fn, rois=None, wait=True,
                       data_key=XRF_DATA_KEY):
+        if rois is None:
+            rois = [roi for nchan, chan in sorted(self._roi_config.items())
+                    for nroi, roi in sorted(chan.items())
+                    ]
+
         warned = False
         num_points = self.num_images.value
         while True:
@@ -243,11 +276,93 @@ class Xspress3Detector(AreaDetector):
                                    'by Ctrl-C')
 
         handler = Xspress3HDF5Handler(hdf, key=data_key)
-        for roi_info in rois:
+        for roi_info in sorted(rois, key=lambda x: x.name):
             roi = handler.get_roi(roi_info, max_points=num_points)
             yield Xspress3ROI(chan=roi_info.chan, ev_low=roi_info.ev_low,
                               ev_high=roi_info.ev_high, name=roi_info.name,
                               data=roi)
+
+    def _roi_pvs(self, channel, roi):
+        pvs = ['C{channel}_MCA_ROI{roi}_LLM',
+               'C{channel}_MCA_ROI{roi}_HLM',
+               'C{channel}_ROI{roi}:EnableCallbacks',
+               ]
+
+        prefix = self._base_prefix
+        return [''.join((prefix, pv.format(channel=channel, roi=roi)))
+                for pv in pvs]
+
+    def _get_epics_roi_config(self, channel, roi):
+        pvs = self._roi_pvs(channel, roi)
+        return [epics.caget(pv) for pv in pvs]
+
+    def _get_roi_name(self, channel, roi, suffix):
+        if self._channel_prefix is not None:
+            return '{}{}_{}'.format(self._channel_prefix, channel, suffix)
+        else:
+            return suffix
+
+    def set_roi_config(self, channel, roi, ev_low, ev_high, name=None):
+        bin_low = int(ev_low / 10)
+        bin_high = int(ev_high / 10)
+
+        if channel not in self._roi_config:
+            self._roi_config[channel] = {}
+
+        if ev_low == ev_high == 0:
+            enable = 0
+            try:
+                del self._roi_config[channel][roi]
+            except KeyError:
+                pass
+        else:
+            enable = 1
+            info = Xspress3ROI(chan=channel, ev_low=ev_low, ev_high=ev_high,
+                               name=name)
+            self._roi_config[channel][roi] = info
+
+            if roi > self.num_roi:
+                logger.warning('ROI {} will be recorded in fly scans but will '
+                               'not be available for live preview (num_roi={})'
+                               ''.format(name, self.num_roi))
+
+        if roi <= self.num_roi:
+            low_pv, high_pv, enable_pv = self._roi_pvs(channel, roi)
+            return [epics.caput(pv, value) for pv, value
+                    in zip((high_pv, low_pv, enable_pv),
+                           (bin_high, bin_low, enable))]
+
+    def clear_roi_config(self, channel, roi):
+        return self.set_roi_config(channel, roi, 0, 0)
+
+    def clear_all_rois(self, rois=None, channels=None):
+        if channels is None:
+            channels = self.default_channels
+
+        if rois is None:
+            rois = range(1, self.num_roi + 1)
+
+        for channel in channels:
+            for roi in rois:
+                values = self._get_epics_roi_config(channel, roi)
+                ev_low, ev_high, enabled = values
+                if (ev_low == ev_high == 0) or not enabled:
+                    pass
+                else:
+                    self.clear_roi_config(channel, roi)
+
+    def add_roi(self, ev_low, ev_high, name, channels=None):
+        if channels is None:
+            channels = self.default_channels
+
+        for channel in channels:
+            try:
+                roi = max(self._roi_config[channel]) + 1
+            except ValueError:
+                roi = 1
+
+            self.set_roi_config(channel, roi, ev_low, ev_high,
+                                name=self._get_roi_name(channel, roi, name))
 
     @property
     def filestore_id(self):
