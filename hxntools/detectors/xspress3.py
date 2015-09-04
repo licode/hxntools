@@ -358,7 +358,7 @@ class Xspress3Detector(AreaDetector):
         for channel in channels:
             try:
                 roi = max(self._roi_config[channel]) + 1
-            except ValueError:
+            except (KeyError, ValueError):
                 roi = 1
 
             self.set_roi_config(channel, roi, ev_low, ev_high,
