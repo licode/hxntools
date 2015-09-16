@@ -100,8 +100,6 @@ class Xspress3FileStore(AreaDetectorFileStore):
         logger.debug('Stopping xspress3 acquisition')
         self._det.acquire.put(0)
 
-        logger.debug('Erasing old spectra')
-        self._det.xs_erase.put(1)
         time.sleep(0.1)
 
         logger.debug('Setting up triggering')
@@ -129,6 +127,9 @@ class Xspress3FileStore(AreaDetectorFileStore):
 
         logger.debug('Inserting the filestore resource')
         self._filestore_res = self._insert_fs_resource()
+
+        logger.debug('Erasing old spectra')
+        self._det.xs_erase.put(1)
 
         logger.debug('Starting acquisition')
         self._det.acquire.put(1, wait=False)
@@ -370,7 +371,8 @@ class Xspress3Rois(object):
         self.num_channels = det.num_channels
         self.limit_rois = limit_rois
 
-    def read_hdf5(self, fn, rois=None, wait=True, data_key=XRF_DATA_KEY):
+    def read_hdf5(self, fn, rois=None, wait=True, max_retries=2,
+                  data_key=XRF_DATA_KEY):
         '''Read ROIs from an hdf5 file'''
 
         if rois is None:
@@ -381,17 +383,19 @@ class Xspress3Rois(object):
         warned = False
         det = self._det
         num_points = det.num_images.value
-        while True:
+        retry = 0
+        while retry < max_retries:
+            retry += 1
             try:
                 try:
                     hdf = h5py.File(fn, 'r')
-                except IOError:
+                except (IOError, OSError) as ex:
                     if not warned:
                         logger.error('Xspress3 hdf5 file still open; press '
                                      'Ctrl-C to cancel')
                         warned = True
 
-                    time.sleep(0.2)
+                    time.sleep(2.0)
                     det.hdf5.capture.put(0)
                     det.acquire.put(0)
                     if not wait:
@@ -406,12 +410,16 @@ class Xspress3Rois(object):
                 raise RuntimeError('Unable to open HDF5 file; interrupted '
                                    'by Ctrl-C')
 
-        handler = Xspress3HDF5Handler(hdf, key=data_key)
-        for roi_info in sorted(rois, key=lambda x: x.name):
-            roi = handler.get_roi(roi_info, max_points=num_points)
-            yield ROISnapshot(chan=roi_info.chan, ev_low=roi_info.ev_low,
-                              ev_high=roi_info.ev_high, name=roi_info.name,
-                              data=roi)
+        if retry >= max_retries:
+            raise RuntimeError('Unable to open HDF5 file; exceeded maximum '
+                               'retries')
+        else:
+            handler = Xspress3HDF5Handler(hdf, key=data_key)
+            for roi_info in sorted(rois, key=lambda x: x.name):
+                roi_data = handler.get_roi(roi_info, max_points=num_points)
+                yield ROISnapshot(chan=roi_info.chan, ev_low=roi_info.ev_low,
+                                  ev_high=roi_info.ev_high, name=roi_info.name,
+                                  data=roi_data)
 
     def _get_roi_name(self, channel, suffix):
         '''Format an ROI name according to the channel prefix'''
