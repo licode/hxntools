@@ -90,9 +90,9 @@ class MerlinFileStore(AreaDetectorFSIterativeWrite):
 
         makedirs(self._store_file_path)
 
-    def set(self, total_points=0, external=False, **kwargs):
+    def set(self, total_points=0, external_trig=False, **kwargs):
         self._total_points = total_points
-        self._external_triggering = bool(external)
+        self._external_triggering = bool(external_trig)
 
 
 class MerlinDetector(AreaDetector):

@@ -123,7 +123,7 @@ class TimepixDetector(AreaDetector):
                                           name=self.name)
 
     def fly_configure(self, path, prefix, num_points,
-                      raw=False, external=True, create_dirs=True):
+                      raw=False, external_trig=True, create_dirs=True):
         # NOTE: due to timepix IOC-related issues, can't use external
         # triggering reliably, so step scan and fly scan configuration
         # are different

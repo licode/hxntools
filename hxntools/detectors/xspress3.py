@@ -37,6 +37,8 @@ class Xspress3FileStore(AreaDetectorFileStore):
         self._filestore_res = None
         self.channels = list(range(1, det.num_channels + 1))
         self._total_points = None
+        self._master = None
+        self._external_trig = None
 
     def _insert_data(self, detvals, timestamp, seq_num):
         for chan in self.channels:
@@ -95,12 +97,14 @@ class Xspress3FileStore(AreaDetectorFileStore):
 
         super().deconfigure(*args, **kwargs)
 
-    def set(self, total_points=0, master=None, **kwargs):
+    def set(self, total_points=0, master=None, external_trig=False,
+            **kwargs):
         self._total_points = total_points
         self._master = master
+        self._external_trig = external_trig
 
     def configure(self, *args, **kwargs):
-        ext_trig = (self._master is not None)
+        ext_trig = (self._master is not None or self._external_trig)
 
         logger.debug('Stopping xspress3 acquisition')
         self._det.acquire.put(0)
@@ -141,8 +145,8 @@ class Xspress3FileStore(AreaDetectorFileStore):
         self._det.xs_erase.put(1)
         self._det.hdf5.capture.put(1, wait=False)
 
-        if self._master is not None:
-            logger.debug('Starting acquisition')
+        if ext_trig:
+            logger.debug('Starting acquisition (waiting for triggers)')
             self._det.acquire.put(1, wait=False)
 
     @property

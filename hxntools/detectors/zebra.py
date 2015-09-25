@@ -199,6 +199,12 @@ class Zebra(ADBase):
         mode_setup()
         self._scan_mode = scan_mode
 
+    def configure(self):
+        pass
+
+    def deconfigure(self):
+        pass
+
     def trigger(self):
         # Re-implement this to trigger as desired in bluesky
         status = DetectorStatus(self)
@@ -278,26 +284,26 @@ class HXNZebra(Zebra):
     def fly_scan(self):
         super(HXNZebra, self).fly_scan()
 
-        self.gate[1].input1 = self.IN3_OC
-        self.gate[1].input2 = self.IN3_OC
+        self.gate[1].input1.value = self.IN3_OC
+        self.gate[1].input2.value = self.IN3_OC
         self._set_input_edges(self.gate[1], 1, 0)
 
         # timepix:
         # self.output[1].ttl = self.GATE1
         # merlin:
         # (Merlin is now on TTL 1 output, replacing timepix 1)
-        self.output[1].ttl = self.GATE2
-        self.output[2].ttl = self.GATE1
+        self.output[1].ttl.value = self.GATE2
+        self.output[2].ttl.value = self.GATE1
 
-        self.gate[2].input1 = self.IN3_OC
-        self.gate[2].input2 = self.IN3_OC
+        self.gate[2].input1.value = self.IN3_OC
+        self.gate[2].input2.value = self.IN3_OC
         self._set_input_edges(self.gate[2], 0, 1)
 
-        self.output[3].ttl = self.GATE2
-        self.output[4].ttl = self.GATE2
+        self.output[3].ttl.value = self.GATE2
+        self.output[4].ttl.value = self.GATE2
 
         # Merlin LVDS
-        # self.output[1].lvds = self.GATE2
+        # self.output[1].lvds.value = self.GATE2
 
     def set(self, total_points=None, scan_mode='step_scan', **kwargs):
         self.scan_mode = scan_mode
