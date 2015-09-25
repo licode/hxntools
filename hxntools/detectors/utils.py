@@ -21,13 +21,3 @@ def makedirs(path, mode=0o777):
     os.chmod(path, mode)
     ret.append(path)
     return ret
-
-
-def get_total_scan_points(points):
-    '''
-    points : ndarray, list, or integer
-
-    returns: product of all points
-    '''
-    points = np.asarray(points)
-    return np.prod(points)

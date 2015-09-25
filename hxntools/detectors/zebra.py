@@ -4,6 +4,7 @@ import time
 
 from ophyd.controls.areadetector.detectors import (ADBase, ADSignal)
 from ophyd.controls import EpicsSignal
+from ophyd.controls.ophydobj import DetectorStatus
 
 logger = logging.getLogger(__name__)
 
@@ -172,10 +173,46 @@ class Zebra(ADBase):
         for addr, addr_name in self.addresses.items():
             setattr(self, addr_name, addr)
 
-    def step_scan(self, scan):
-        pass
+        self._scan_modes = {'step_scan': self.step_scan,
+                            'fly_scan': self.fly_scan
+                            }
 
-    def fly_scan(self, scan):
+    def step_scan(self):
+        logger.debug('Zebra %s: configuring step-scan mode', self)
+
+    def fly_scan(self):
+        logger.debug('Zebra %s: configuring fly-scan mode', self)
+
+    @property
+    def scan_mode(self):
+        '''The scanning scan_mode'''
+        return self._scan_mode
+
+    @scan_mode.setter
+    def scan_mode(self, scan_mode):
+        try:
+            mode_setup = self._scan_modes[scan_mode]
+        except KeyError:
+            raise ValueError('Unrecognized scan mode {!r}. Available: {}'
+                             ''.format(scan_mode, self._scan_modes.keys()))
+
+        mode_setup()
+        self._scan_mode = scan_mode
+
+    def trigger(self):
+        # Re-implement this to trigger as desired in bluesky
+        status = DetectorStatus(self)
+        status._finished()
+        return status
+
+    def describe(self):
+        return {}
+
+    def read(self):
+        return {}
+
+    def stop(self):
+        # TODO bluesky implementation detail
         pass
 
 
@@ -183,13 +220,9 @@ class HXNZebra(Zebra):
     def __init__(self, *args, **kwargs):
         super(HXNZebra, self).__init__(*args, **kwargs)
 
-        # NOTE: preset_time comes from sync_dscan
-        self.preset_time = None
-
-        self.scaler1_output_mode = EpicsSignal('XF:03IDC-ES{Sclr:1}OutputMode',
-                                               name='sclr1_outputmode')
-        self.scaler1_stopall = EpicsSignal('XF:03IDC-ES{Sclr:1}StopAll',
-                                           name='sclr1_stopall')
+        # NOTE: count_time comes from bluesky
+        self.count_time = None
+        self._mode = None
 
     def _set_input_edges(self, gate, edge1, edge2):
         edge1, edge2 = int(edge1), int(edge2)
@@ -201,29 +234,25 @@ class HXNZebra(Zebra):
             gate.input2_edge.put(edge2)
             time.sleep(0.1)
 
-    def step_scan(self, scan):
+    def step_scan(self):
+        super(HXNZebra, self).step_scan()
+
         # Scaler triggers all detectors
         # Scaler, output mode 1, LNE (output 5) connected to Zebra IN1_TTL
-        # Pulse 1 has pulse width set to the preset_time
+        # Pulse 1 has pulse width set to the count_time
 
-        # OUT1_TTL Timepix
+        # OUT1_TTL Merlin
         # OUT2_TTL Scaler 1 inhibit
         #
         # OUT3_TTL Scaler 1 gate
         # OUT4_TTL Xspress3
-        self.pulse[1].input1 = self.IN1_TTL
+        self.pulse[1].input_.value = self.IN1_TTL
 
-        if self.preset_time is not None:
-            self.pulse[1].width = self.preset_time
+        if self.count_time is not None:
+            logger.debug('Step scan pulse-width is %s', self.count_time)
+            self.pulse[1].width.value = self.count_time
 
-        if self.scaler1_output_mode.get(as_string=True) != 'Mode 1':
-            logger.info('Setting scaler 1 to output mode 1')
-            self.scaler1_output_mode.put('Mode 1')
-
-        # Ensure that the scaler isn't counting in mcs mode for any reason
-        self.scaler1_stopall.put(1)
-
-        self.pulse[1].delay = 0.0
+        self.pulse[1].delay.value = 0.0
         self.pulse[1].input_edge.value = 1
 
         # To be used in regular scaler mode, scaler 1 has to have
@@ -233,20 +262,22 @@ class HXNZebra(Zebra):
         # Timepix
         # self.output[1].ttl = self.PULSE1
         # Merlin
-        self.output[1].ttl = self.PULSE1
-        self.output[2].ttl = self.SOFT_IN4
+        self.output[1].ttl.value = self.PULSE1
+        self.output[2].ttl.value = self.SOFT_IN4
 
-        self.gate[2].input1 = self.PULSE1
-        self.gate[2].input2 = self.PULSE1
+        self.gate[2].input1.value = self.PULSE1
+        self.gate[2].input2.value = self.PULSE1
         self._set_input_edges(self.gate[2], 0, 1)
 
-        self.output[3].ttl = self.SOFT_IN4
-        self.output[4].ttl = self.GATE2
+        self.output[3].ttl.value = self.SOFT_IN4
+        self.output[4].ttl.value = self.GATE2
 
         # Merlin LVDS
-        self.output[1].lvds = self.PULSE1
+        self.output[1].lvds.value = self.PULSE1
 
     def fly_scan(self, scan):
+        super(HXNZebra, self).fly_scan()
+
         self.gate[1].input1 = self.IN3_OC
         self.gate[1].input2 = self.IN3_OC
         self._set_input_edges(self.gate[1], 1, 0)
@@ -267,3 +298,6 @@ class HXNZebra(Zebra):
 
         # Merlin LVDS
         # self.output[1].lvds = self.GATE2
+
+    def set(self, total_points=None, scan_mode='step_scan', **kwargs):
+        self.scan_mode = scan_mode

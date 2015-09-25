@@ -13,7 +13,7 @@ from ophyd.controls.areadetector.detectors import (AreaDetector, ADBase,
 from ophyd.controls.area_detector import AreaDetectorFileStore
 from ophyd.controls.detector import DetectorStatus
 
-from .utils import (makedirs, get_total_scan_points)
+from .utils import makedirs
 
 from ..handlers import Xspress3HDF5Handler
 from ..handlers.xspress3 import XRF_DATA_KEY
@@ -36,6 +36,7 @@ class Xspress3FileStore(AreaDetectorFileStore):
         self.file_template = file_template
         self._filestore_res = None
         self.channels = list(range(1, det.num_channels + 1))
+        self._total_points = None
 
     def _insert_data(self, detvals, timestamp, seq_num):
         for chan in self.channels:
@@ -86,7 +87,7 @@ class Xspress3FileStore(AreaDetectorFileStore):
             logger.warning('Still capturing data .... interrupted.')
 
         self._det.trigger_mode.put('Internal')
-        self.set_scan(None)
+        self._total_points = None
 
         # TODO
         self._old_image_mode = self._image_mode.value
@@ -94,18 +95,26 @@ class Xspress3FileStore(AreaDetectorFileStore):
 
         super().deconfigure(*args, **kwargs)
 
+    def set(self, total_points=0, master=None, **kwargs):
+        self._total_points = total_points
+        self._master = master
+
     def configure(self, *args, **kwargs):
-        num_points = get_total_scan_points(self._num_scan_points)
+        ext_trig = (self._master is not None)
 
         logger.debug('Stopping xspress3 acquisition')
         self._det.acquire.put(0)
 
         time.sleep(0.1)
 
-        logger.debug('Setting up triggering')
-        self._det.trigger_mode.put('TTL Veto Only')
-        self._det.num_images.put(num_points)
-        # self._det.trigger_mode.put('Internal')
+        if ext_trig:
+            logger.debug('Setting up external triggering')
+            self._det.trigger_mode.put('TTL Veto Only')
+            self._det.num_images.put(self._total_points)
+        else:
+            logger.debug('Setting up internal triggering')
+            self._det.trigger_mode.put('Internal')
+            self._det.num_images.put(1)
 
         logger.debug('Configuring other filestore stuff')
         super(Xspress3FileStore, self).configure(*args, **kwargs)
@@ -130,10 +139,19 @@ class Xspress3FileStore(AreaDetectorFileStore):
 
         logger.debug('Erasing old spectra')
         self._det.xs_erase.put(1)
-
-        logger.debug('Starting acquisition')
-        self._det.acquire.put(1, wait=False)
         self._det.hdf5.capture.put(1, wait=False)
+
+        if self._master is not None:
+            logger.debug('Starting acquisition')
+            self._det.acquire.put(1, wait=False)
+
+    @property
+    def count_time(self):
+        return self._det.acquire_period.value
+
+    @count_time.setter
+    def count_time(self, val):
+        self._det.acquire_period.put(val)
 
     def acquire(self, **kwargs):
         status = DetectorStatus(self)
@@ -175,14 +193,6 @@ class Xspress3FileStore(AreaDetectorFileStore):
     @property
     def ioc_filename(self):
         return self._ioc_filename
-
-    def set_scan(self, scan):
-        self._scan = scan
-
-        if scan is None:
-            return
-
-        self._num_scan_points = scan.npts + 1
 
 
 class Xspress3Detector(AreaDetector):
@@ -421,7 +431,7 @@ class Xspress3Rois(object):
                                   ev_high=roi_info.ev_high, name=roi_info.name,
                                   data=roi_data)
 
-    def _get_roi_name(self, channel, suffix):
+    def get_roi_name(self, channel, suffix):
         '''Format an ROI name according to the channel prefix'''
         if self.name_format is not None:
             return self.name_format.format(self=self, channel=channel,
@@ -518,7 +528,7 @@ class Xspress3Rois(object):
                     self._roi_config[channel][roi_num]
                 except KeyError:
                     self.set(channel, roi_num, ev_low, ev_high,
-                             name=self._get_roi_name(channel, name))
+                             name=self.get_roi_name(channel, name))
                     break
 
                 roi_num += 1

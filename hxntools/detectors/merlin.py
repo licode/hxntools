@@ -3,7 +3,7 @@ import logging
 
 from ophyd.controls.areadetector.detectors import AreaDetector
 from ophyd.controls.area_detector import AreaDetectorFSIterativeWrite
-from .utils import (makedirs, get_total_scan_points)
+from .utils import makedirs
 
 import filestore.api as fs
 
@@ -44,13 +44,12 @@ class MerlinFileStore(AreaDetectorFSIterativeWrite):
         plugin.file_path.put(self._ioc_file_path, wait=True)
         plugin.file_name.put(self._filename, wait=True)
         plugin.file_number.put(0)
-        num_points = get_total_scan_points(self._num_scan_points)
 
         det.array_callbacks.put('Enable')
 
         scan = self._scan
         if hasattr(scan, 'external_triggering') and scan.external_triggering:
-            det.num_images.put(num_points)
+            det.num_images.put(self._total_points)
             det.image_mode.put('Multiple')
             det.trigger_mode.put('External')
             # NOTE: these values specify a debounce time for external
@@ -65,7 +64,7 @@ class MerlinFileStore(AreaDetectorFSIterativeWrite):
 
         plugin.auto_increment.put(1)
         plugin.auto_save.put(1)
-        plugin.num_capture.put(num_points)
+        plugin.num_capture.put(self._total_points)
         plugin.file_write_mode.put(2)
         plugin.enable.put(1)
         plugin.capture.put(1)
@@ -80,7 +79,7 @@ class MerlinFileStore(AreaDetectorFSIterativeWrite):
     def deconfigure(self, *args, **kwargs):
         super(MerlinFileStore, self).deconfigure(*args, **kwargs)
 
-        self.set_scan(None)
+        self._total_points = None
         self._det.tiff1.capture.put(0)
 
     def _make_filename(self, **kwargs):
@@ -88,13 +87,8 @@ class MerlinFileStore(AreaDetectorFSIterativeWrite):
 
         makedirs(self._store_file_path)
 
-    def set_scan(self, scan):
-        self._scan = scan
-
-        if scan is None:
-            return
-
-        self._num_scan_points = scan.npts + 1
+    def set(self, total_points=0, **kwargs):
+        self._total_points = total_points
 
 
 class MerlinDetector(AreaDetector):
