@@ -25,6 +25,7 @@ class MerlinFileStore(AreaDetectorFSIterativeWrite):
         #       so they differ from what AreaDetectorFSIterativeWrite expects
         self._arraysize0 = self._file_plugin.array_size.signals[1]
         self._arraysize1 = self._file_plugin.array_size.signals[0]
+        self._external_triggering = False
 
     def _insert_fs_resource(self):
         return fs.insert_resource('AD_TIFF', self._store_file_path,
@@ -47,8 +48,7 @@ class MerlinFileStore(AreaDetectorFSIterativeWrite):
 
         det.array_callbacks.put('Enable')
 
-        scan = self._scan
-        if hasattr(scan, 'external_triggering') and scan.external_triggering:
+        if self._external_triggering:
             det.num_images.put(self._total_points)
             det.image_mode.put('Multiple')
             det.trigger_mode.put('External')
@@ -76,6 +76,9 @@ class MerlinFileStore(AreaDetectorFSIterativeWrite):
         # switching timepix TTL to this for now
         self._filestore_res = self._insert_fs_resource()
 
+        if self._external_triggering:
+            det.acquire.put(1, wait=False)
+
     def deconfigure(self, *args, **kwargs):
         super(MerlinFileStore, self).deconfigure(*args, **kwargs)
 
@@ -87,8 +90,9 @@ class MerlinFileStore(AreaDetectorFSIterativeWrite):
 
         makedirs(self._store_file_path)
 
-    def set(self, total_points=0, **kwargs):
+    def set(self, total_points=0, external=False, **kwargs):
         self._total_points = total_points
+        self._external_triggering = bool(external)
 
 
 class MerlinDetector(AreaDetector):

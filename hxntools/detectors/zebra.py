@@ -275,7 +275,7 @@ class HXNZebra(Zebra):
         # Merlin LVDS
         self.output[1].lvds.value = self.PULSE1
 
-    def fly_scan(self, scan):
+    def fly_scan(self):
         super(HXNZebra, self).fly_scan()
 
         self.gate[1].input1 = self.IN3_OC
