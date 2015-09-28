@@ -2,11 +2,13 @@ from __future__ import print_function
 import time
 import logging
 import uuid
+import itertools
 
 from collections import namedtuple
 
 import h5py
 import filestore.api as fs_api
+from filestore.commands import bulk_insert_datum
 
 from ophyd.controls.areadetector.detectors import (AreaDetector, ADBase,
                                                    ADSignal)
@@ -26,6 +28,7 @@ class Xspress3FileStore(AreaDetectorFileStore):
 
     def __init__(self, det, basename, file_template='%s%s_%6.6d.h5',
                  config_time=0.5,
+                 mds_key_format='{self._det.name}_ch{chan}',
                  **kwargs):
         super().__init__(basename, cam='', reset_acquire=False,
                          use_image_mode=False, **kwargs)
@@ -41,40 +44,47 @@ class Xspress3FileStore(AreaDetectorFileStore):
         self._master = None
         self._external_trig = None
         self._config_time = config_time
+        self.mds_keys = {chan: mds_key_format.format(self=self, chan=chan)
+                         for chan in self.channels}
 
-    def _insert_data(self, detvals, timestamp, seq_num):
+    def _get_datum_args(self, seq_num):
         for chan in self.channels:
-            mds_key = '{}_ch{}'.format(self._det.name, chan)
-
-            datum_uid = str(uuid.uuid4())
-            datum_key = 'ch%d_spectrum_%.5d-%s' % (chan, seq_num, datum_uid)
-            datum_args = {'frame': seq_num, 'channel': chan}
-            fs_api.insert_datum(self._filestore_res, datum_key, datum_args)
-            detvals[mds_key] = {'timestamp': timestamp,
-                                'value': datum_key,
-                                }
+            yield {'frame': seq_num, 'channel': chan}
 
     def read(self):
-        detvals = {}
+        timestamp = time.time()
+        uids = [str(uuid.uuid4()) for ch in self.channels]
 
-        self._insert_data(detvals, time.time(), self._abs_trigger_count)
+        bulk_insert_datum(self._filestore_res, uids,
+                          self._get_datum_args(self._abs_trigger_count))
+
         self._abs_trigger_count += 1
-        return detvals
+        return {self.mds_keys[ch]: {'timestamp': timestamp,
+                                    'value': uid,
+                                    }
+                for uid, ch in zip(uids, self.channels)
+                }
 
-    def bulk_read(self, count):
-        ret = {}
+    def bulk_read(self, timestamps):
+        channels = self.channels
+        ch_uids = {ch: [str(uuid.uuid4()) for ts in timestamps]
+                   for ch in channels}
 
-        def insert_datum(**datum_args):
-            datum_uid = str(uuid.uuid4())
-            fs_api.insert_datum(self._filestore_res, datum_uid, datum_args)
-            return datum_uid
+        count = len(timestamps)
 
-        for chan in self.channels:
-            mds_key = '{}_ch{}'.format(self._det.name, chan)
-            ret[mds_key] = [insert_datum(frame=seq_num, channel=chan)
-                            for seq_num in range(count)]
+        def get_datum_args():
+            for ch in channels:
+                for seq_num in range(count):
+                    yield {'frame': seq_num,
+                           'channel': ch}
 
-        return ret
+        uids = [ch_uids[ch] for ch in channels]
+        bulk_insert_datum(self._filestore_res, itertools.chain(*uids),
+                          get_datum_args())
+
+        return {self.mds_keys[ch]: ch_uids[ch]
+                for ch in channels
+                }
 
     def _make_filename(self, **kwargs):
         super()._make_filename(**kwargs)
@@ -411,7 +421,7 @@ class Xspress3Rois(object):
             try:
                 try:
                     hdf = h5py.File(fn, 'r')
-                except (IOError, OSError) as ex:
+                except (IOError, OSError):
                     if not warned:
                         logger.error('Xspress3 hdf5 file still open; press '
                                      'Ctrl-C to cancel')
