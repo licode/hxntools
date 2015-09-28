@@ -17,7 +17,7 @@ class ZebraPulse(ADBase):
     input_str = ADSignal('INP:STR', rw=False, string=True)
     input_status = ADSignal('INP:STA', rw=False)
     delay = ADSignal('DLY')
-    time_units = ADSignal('PRE')
+    time_units = ADSignal('PRE', string=True)
     output = ADSignal('OUT')
 
     def __init__(self, prefix, zebra, index, **kwargs):
@@ -257,6 +257,7 @@ class HXNZebra(Zebra):
         if self.count_time is not None:
             logger.debug('Step scan pulse-width is %s', self.count_time)
             self.pulse[1].width.value = self.count_time
+            self.pulse[1].time_units.value = 's'
 
         self.pulse[1].delay.value = 0.0
         self.pulse[1].input_edge.value = 1
