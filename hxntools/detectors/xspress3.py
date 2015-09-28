@@ -25,6 +25,7 @@ class Xspress3FileStore(AreaDetectorFileStore):
     '''Xspress3 acquisition -> filestore'''
 
     def __init__(self, det, basename, file_template='%s%s_%6.6d.h5',
+                 config_time=0.5,
                  **kwargs):
         super().__init__(basename, cam='', reset_acquire=False,
                          use_image_mode=False, **kwargs)
@@ -39,6 +40,7 @@ class Xspress3FileStore(AreaDetectorFileStore):
         self._total_points = None
         self._master = None
         self._external_trig = None
+        self._config_time = config_time
 
     def _insert_data(self, detvals, timestamp, seq_num):
         for chan in self.channels:
@@ -82,8 +84,11 @@ class Xspress3FileStore(AreaDetectorFileStore):
     def deconfigure(self, *args, **kwargs):
         # self._det.hdf5.capture.put(0)
         try:
+            i = 0
             while self._det.hdf5.capture.value == 1:
-                logger.warning('Still capturing data .... waiting.')
+                i += 1
+                if (i % 50) == 0:
+                    logger.warning('Still capturing data .... waiting.')
                 time.sleep(0.1)
         except KeyboardInterrupt:
             logger.warning('Still capturing data .... interrupted.')
@@ -148,6 +153,9 @@ class Xspress3FileStore(AreaDetectorFileStore):
         if ext_trig:
             logger.debug('Starting acquisition (waiting for triggers)')
             self._det.acquire.put(1, wait=False)
+
+        # Xspress3 needs a bit of time to configure itself...
+        time.sleep(self._config_time)
 
     @property
     def count_time(self):
