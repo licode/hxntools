@@ -320,8 +320,8 @@ class ROISnapshot(_roi_tuple):
 class EpicsROI(ADBase):
     '''A configurable Xspress3 EPICS ROI'''
 
-    array = ADSignal('C{self.channel}_ROI{self.roi_num}:ArrayData',
-                     has_rbv=True)
+    array = ADSignal('C{self.channel}_ROI{self.roi_num}:ArrayData_RBV',
+                     rw=False)
     value = ADSignal('C{self.channel}_ROI{self.roi_num}:Value_RBV', rw=False)
     value_sum = ADSignal('C{self.channel}_ROI{self.roi_num}:ValueSum_RBV',
                          rw=False)
