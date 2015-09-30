@@ -40,6 +40,7 @@ class MerlinFileStore(AreaDetectorFSIterativeWrite):
 
         super(MerlinFileStore, self).configure(*args, **kwargs)
         # self._image_mode.put(0, wait=True)
+        plugin.blocking_callbacks.put(1)
         plugin.file_template.put(self.file_template, wait=True)
         self._make_filename()
         plugin.file_path.put(self._ioc_file_path, wait=True)

@@ -145,6 +145,7 @@ class Xspress3FileStore(AreaDetectorFileStore):
                      self._ioc_file_path, self._filename)
         self._det.hdf5.file_template.put(self.file_template, wait=True)
         self._det.hdf5.file_number.put(0)
+        self._det.hdf5.blocking_callbacks.put(1)
         self._det.hdf5.enable.put(1)
         self._det.hdf5.file_path.put(self._ioc_file_path, wait=True)
         self._det.hdf5.file_name.put(self._filename, wait=True)
