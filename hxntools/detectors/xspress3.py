@@ -13,7 +13,7 @@ from filestore.commands import bulk_insert_datum
 from ophyd.controls.areadetector.detectors import (AreaDetector, ADBase,
                                                    ADSignal)
 from ophyd.controls.area_detector import AreaDetectorFileStore
-from ophyd.controls.detector import DetectorStatus
+from ophyd.controls.detector import (DetectorStatus, Detector)
 
 from .utils import makedirs
 
@@ -257,7 +257,7 @@ class Xspress3Detector(AreaDetector):
 
     def __init__(self, prefix, file_path='', ioc_file_path='',
                  default_channels=None, num_roi=16, num_channels=8,
-                 channel_prefix=None,
+                 channel_prefix=None, roi_sums=False,
                  **kwargs):
         AreaDetector.__init__(self, prefix, **kwargs)
 
@@ -267,7 +267,8 @@ class Xspress3Detector(AreaDetector):
         self.default_channels = list(default_channels)
         self.num_roi = int(num_roi)
         self.num_channels = int(num_channels)
-        self.rois = Xspress3Rois(self, channel_prefix=channel_prefix)
+        self.rois = Xspress3Rois(self, channel_prefix=channel_prefix,
+                                 use_sums=roi_sums)
 
         self.filestore = Xspress3FileStore(self, self._base_prefix,
                                            stats=[], shutter=None,
@@ -318,7 +319,7 @@ class ROISnapshot(_roi_tuple):
                                                data, epics_roi)
 
 
-class EpicsROI(ADBase):
+class EpicsROI(ADBase, Detector):
     '''A configurable Xspress3 EPICS ROI'''
 
     array = ADSignal('C{self.channel}_ROI{self.roi_num}:ArrayData_RBV',
@@ -332,10 +333,11 @@ class EpicsROI(ADBase):
                        has_rbv=True)
     vis_enabled = ADSignal('C{self.channel}_PluginControlVal', rw=True)
 
-    def __init__(self, prefix, channel, roi_num, **kwargs):
+    def __init__(self, prefix, channel, roi_num, use_sum=False, **kwargs):
         super(EpicsROI, self).__init__(prefix, **kwargs)
         self._channel = channel
         self._roi_num = roi_num
+        self._use_sum = use_sum
 
     @property
     def channel(self):
@@ -373,20 +375,48 @@ class EpicsROI(ADBase):
         self.bin_high.put(0)
         self.enabled.put(0)
 
-    def configure(self, ev_low, ev_high):
-        return self.configure_bin(ev_to_bin(ev_low), ev_to_bin(ev_high))
-
-    def configure_bin(self, bin_low, bin_high):
-        if bin_high <= self.bin_low.value:
-            self.bin_low.put(0)
-
-        self.bin_high.put(bin_high)
-        self.bin_low.put(bin_low)
-
-        if bin_high > bin_low:
-            self.enabled.put(1)
+    def set_roi(self, low, high, units='ev'):
+        if units == 'ev':
+            low = ev_to_bin(low)
+            high = ev_to_bin(high)
+        elif units == 'bin':
+            low = int(low)
+            high = int(high)
         else:
-            self.enabled.put(0)
+            raise ValueError('Unknown units. Expected either "ev" or "bin"')
+
+        enable = 1 if high > low else 0
+        changed = any([self.bin_high.value != high,
+                       self.bin_low.value != low,
+                       self.enabled.value != enable])
+
+        if changed:
+            logger.debug('Setting up EPICS ROI: name=%s bins=(%s, %s) '
+                         'enable=%s prefix=%s channel=%s',
+                         self.name, low, high, enable, self._prefix,
+                         self._channel)
+            if high <= self.bin_low.value:
+                self.bin_low.put(0)
+
+            self.bin_high.put(high)
+            self.bin_low.put(low)
+            self.enabled.put(enable)
+
+    @property
+    def _read_signal(self):
+        '''The signal which is read for data acquisition'''
+        if self._use_sum:
+            return self.value_sum
+        return self.value
+
+    def read(self):
+        return {self.name: dict(value=self._read_signal.get(),
+                                timestamp=time.time())}
+
+    def describe(self):
+        source = 'PV:{}'.format(self._read_signal.pvname)
+        return {self.name: dict(dtype='number', shape=[],
+                                source=source)}
 
 
 class Xspress3Rois(object):
@@ -395,7 +425,8 @@ class Xspress3Rois(object):
     .. note:: Can optionally configure more than the EPICS IOC supports
     '''
     def __init__(self, det, channel_prefix=None, limit_rois=False,
-                 name_format='{self.channel_prefix}{channel}_{name}'):
+                 name_format='{self.channel_prefix}{channel}_{name}',
+                 use_sums=False):
         self._det = det
         self._roi_config = {}
         self.channel_prefix = channel_prefix
@@ -403,6 +434,7 @@ class Xspress3Rois(object):
         self.num_roi = det.num_roi
         self.num_channels = det.num_channels
         self.limit_rois = limit_rois
+        self.use_sums = use_sums
 
     def read_hdf5(self, fn, rois=None, wait=True, max_retries=2,
                   data_key=XRF_DATA_KEY):
@@ -464,7 +496,6 @@ class Xspress3Rois(object):
 
     def set(self, channel, roi, ev_low, ev_high, name=None):
         '''Configure an ROI on a specific channel'''
-
         if channel not in self._roi_config:
             self._roi_config[channel] = {}
 
@@ -484,7 +515,8 @@ class Xspress3Rois(object):
                 epics_roi.clear()
         else:
             if roi <= self.num_roi:
-                epics_roi = EpicsROI(self._det.prefix, channel, roi)
+                epics_roi = EpicsROI(self._det.prefix, channel, roi, name=name,
+                                     use_sum=self.use_sums)
             else:
                 if self.limit_rois:
                     raise ValueError('Cannot add more ROIs than the EPICS layer '
@@ -495,7 +527,7 @@ class Xspress3Rois(object):
                                ''.format(name, self.num_roi))
 
             if epics_roi is not None:
-                epics_roi.configure(ev_low, ev_high)
+                epics_roi.set_roi(ev_low, ev_high, units='ev')
 
             info = ROISnapshot(chan=channel, ev_low=ev_low, ev_high=ev_high,
                                name=name, epics_roi=epics_roi)
@@ -508,6 +540,39 @@ class Xspress3Rois(object):
         for chan, chan_rois in self._roi_config.items():
             for roi_num, roi in chan_rois.items():
                 yield roi
+
+    def get_epics_rois(self, channels=None, names=None, full_names=None):
+        '''Get the EPICS ROIs which can be used in data collection
+
+        Parameters
+        ----------
+        channels : list, optional
+            A list of channels to match
+        full_names : list, optional
+            A list of full names to match, e.g., ['Det1_Si']
+        names : list, optional
+            A list of partial names to match, e.g., ['Si'] would match
+            Det1_Si, Det2_Si, and so on.
+        '''
+        for roi in self.rois:
+            if channels is not None and roi.chan not in channels:
+                continue
+
+            if full_names is not None and roi.name not in full_names:
+                continue
+
+            if names is not None:
+                found = False
+                for name in names:
+                    if roi.name.endswith(name):
+                        found = True
+                        break
+
+                if not found:
+                    continue
+
+            if roi.epics_roi is not None:
+                yield roi.epics_roi
 
     def clear(self, channel, roi):
         '''Clear ROI from a specific channel by index'''
