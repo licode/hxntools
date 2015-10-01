@@ -46,6 +46,7 @@ class Xspress3FileStore(AreaDetectorFileStore):
         self._config_time = config_time
         self.mds_keys = {chan: mds_key_format.format(self=self, chan=chan)
                          for chan in self.channels}
+        self._file_plugin = None
 
     def _get_datum_args(self, seq_num):
         for chan in self.channels:
