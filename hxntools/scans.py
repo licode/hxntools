@@ -4,6 +4,7 @@ from boltons.iterutils import chunked
 from bluesky.run_engine import Msg
 from bluesky import (scans, simple_scans)
 from ophyd.controls import EpicsSignal
+from ophyd.controls.positioner import Positioner
 
 
 logger = logging.getLogger(__name__)
@@ -30,6 +31,9 @@ def scan_setup(detectors, total_points):
         if not hasattr(det, 'set'):
             continue
 
+        if isinstance(det, (EpicsSignal, Positioner)):
+            logger.debug('Skipping detector %s', det)
+            continue
         logger.debug('Setting up detector %s', det)
         yield Msg('set', det, scan_mode='step_scan', total_points=total_points)
 
