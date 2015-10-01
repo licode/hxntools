@@ -16,15 +16,16 @@ class MerlinFileStore(AreaDetectorFSIterativeWrite):
         super(MerlinFileStore, self).__init__(basename, cam='cam1:',
                                               **kwargs)
         self._det = det
-        self._file_plugin = det.tiff1
+        self._file_plugin = None
+        self._plugin = det.tiff1
         self.file_template = '%s%s_%6.6d.tiff'
-        self._file_template = self._file_plugin.file_template
+        self._file_template = self._plugin.file_template
 
         # NOTE: hack to get parent classes to work...
         # NOTE: areadetector array sizes were rearranged to mirror numpy indexing
         #       so they differ from what AreaDetectorFSIterativeWrite expects
-        self._arraysize0 = self._file_plugin.array_size.signals[1]
-        self._arraysize1 = self._file_plugin.array_size.signals[0]
+        self._arraysize0 = self._plugin.array_size.signals[1]
+        self._arraysize1 = self._plugin.array_size.signals[0]
         self._external_triggering = False
 
     def _insert_fs_resource(self):
@@ -36,7 +37,7 @@ class MerlinFileStore(AreaDetectorFSIterativeWrite):
     def configure(self, *args, **kwargs):
         det = self._det
 
-        plugin = self._file_plugin
+        plugin = self._plugin
 
         super(MerlinFileStore, self).configure(*args, **kwargs)
         # self._image_mode.put(0, wait=True)
