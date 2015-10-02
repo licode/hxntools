@@ -1,6 +1,8 @@
 from __future__ import print_function
 import logging
+import uuid
 
+from filestore.commands import bulk_insert_datum
 from ophyd.controls.areadetector.detectors import AreaDetector
 from ophyd.controls.area_detector import AreaDetectorFSIterativeWrite
 from .utils import makedirs
@@ -33,6 +35,26 @@ class MerlinFileStore(AreaDetectorFSIterativeWrite):
                                   {'template': self._file_template.value,
                                    'filename': self._filename,
                                    'frame_per_point': 1})
+
+    def read(self):
+        ret = super(MerlinDetector, self).read()
+        lightfield_key = list(ret.keys())[0]
+        return {self._det.name: ret[lightfield_key]}
+
+    def bulk_read(self, timestamps):
+        uids = list(str(uuid.uuid4()) for ts in timestamps)
+        datum_args = (dict(point_number=i) for i in range(len(uids)))
+        bulk_insert_datum(self._filestore_res, uids, datum_args)
+        return {self._det.name: uids}
+
+    def describe(self):
+        size = (self._arraysize1.value,
+                self._arraysize0.value)
+
+        return {self._det.name: {'external': 'FILESTORE:',
+                                 'source': 'PV:{}'.format(self._basename),
+                                 'shape': size, 'dtype': 'array'}
+                }
 
     def configure(self, *args, **kwargs):
         det = self._det
