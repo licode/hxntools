@@ -17,18 +17,20 @@ class MerlinFileStore(AreaDetectorFSIterativeWrite):
     def __init__(self, det, basename, **kwargs):
         super(MerlinFileStore, self).__init__(basename, cam='cam1:',
                                               **kwargs)
+
         self._det = det
         self._file_plugin = None
         self._plugin = det.tiff1
         self.file_template = '%s%s_%6.6d.tiff'
         self._file_template = self._plugin.file_template
+        self._master = None
 
         # NOTE: hack to get parent classes to work...
         # NOTE: areadetector array sizes were rearranged to mirror numpy indexing
         #       so they differ from what AreaDetectorFSIterativeWrite expects
         self._arraysize0 = self._plugin.array_size.signals[1]
         self._arraysize1 = self._plugin.array_size.signals[0]
-        self._external_triggering = False
+        self._external_trig = False
 
     def _insert_fs_resource(self):
         return fs.insert_resource('AD_TIFF', self._store_file_path,
@@ -37,8 +39,8 @@ class MerlinFileStore(AreaDetectorFSIterativeWrite):
                                    'frame_per_point': 1})
 
     def read(self):
-        ret = super(MerlinDetector, self).read()
-        lightfield_key = list(ret.keys())[0]
+        ret = super(MerlinFileStore, self).read()
+        lightfield_key = '{}_image_lightfield'.format(self._det.name)
         return {self._det.name: ret[lightfield_key]}
 
     def bulk_read(self, timestamps):
@@ -57,11 +59,12 @@ class MerlinFileStore(AreaDetectorFSIterativeWrite):
                 }
 
     def configure(self, *args, **kwargs):
-        det = self._det
+        super(MerlinFileStore, self).configure(*args, **kwargs)
+        ext_trig = (self._master is not None or self._external_trig)
 
+        det = self._det
         plugin = self._plugin
 
-        super(MerlinFileStore, self).configure(*args, **kwargs)
         # self._image_mode.put(0, wait=True)
         plugin.blocking_callbacks.put(1)
         plugin.file_template.put(self.file_template, wait=True)
@@ -72,7 +75,7 @@ class MerlinFileStore(AreaDetectorFSIterativeWrite):
 
         det.array_callbacks.put('Enable')
 
-        if self._external_triggering:
+        if ext_trig:
             det.num_images.put(self._total_points)
             det.image_mode.put('Multiple')
             det.trigger_mode.put('External')
@@ -100,7 +103,7 @@ class MerlinFileStore(AreaDetectorFSIterativeWrite):
         # switching timepix TTL to this for now
         self._filestore_res = self._insert_fs_resource()
 
-        if self._external_triggering:
+        if ext_trig:
             det.acquire.put(1, wait=False)
 
     def deconfigure(self, *args, **kwargs):
@@ -114,9 +117,10 @@ class MerlinFileStore(AreaDetectorFSIterativeWrite):
 
         makedirs(self._store_file_path)
 
-    def set(self, total_points=0, external_trig=False, **kwargs):
+    def set(self, total_points=0, external_trig=False, master=None, **kwargs):
+        self._master = master
         self._total_points = total_points
-        self._external_triggering = bool(external_trig)
+        self._external_trig = bool(external_trig)
 
 
 class MerlinDetector(AreaDetector):
