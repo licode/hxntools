@@ -1,7 +1,12 @@
 import logging
 
 from ophyd.controls import EpicsSignal
-from ophyd.utils import DisconnectedError
+try:
+    from ophyd.utils import DisconnectedError
+except Exception as ex:
+    # TODO: update ophyd (didn't realize this wasn't updated and
+    # don't want to do this right before the weekend... KL 10/9)
+    DisconnectedError = Exception
 
 logger = logging.getLogger(__name__)
 
@@ -13,6 +18,7 @@ class HxnUidBroadcast:
     '''
     def __init__(self, uid_pv):
         self._uid = None
+        self._last_start = None
         self.uid_signal = EpicsSignal(uid_pv)
 
     @property
