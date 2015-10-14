@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 class MultipleMotorPlan(scans.ScanND):
-    """Delta (relative) scan over multi-motor trajectory
+    """Scan over multi-motor trajectory
 
     Parameters
     ----------
@@ -62,10 +62,9 @@ class MultipleMotorPlan(scans.ScanND):
         Returns
         -------
         points : list of positions for each motor
-            [(m1p1, m2p1, ...), ..., (m1pN, m2pN)]
+            [(m1p1, m1p1, ...), ..., (mNp1, mNpM)]
             where m1p1 is motor 1, position 1
         '''
-
         raise NotImplementedError('get_points should be implemented on the '
                                   'subclass')
 
@@ -79,9 +78,8 @@ class MultipleMotorAbsPlan(MultipleMotorPlan):
         list of 'readable' objects
     motors : list of motors
         (m1, m2, ...)
-    points : list of positions for each motor
-        [(m1p1, m2p1, ...), ..., (m1pN, m2pN)]
-        where m1p1 is motor 1, position 1
+    point_args : list
+        List of arguments used to generate the points for the scan
     """
     def _pre_scan(self):
         self._offsets = defaultdict(lambda: 0.0)
@@ -97,9 +95,8 @@ class MultipleMotorDeltaScan(MultipleMotorPlan):
         list of 'readable' objects
     motors : list of motors
         (m1, m2, ...)
-    points : list of positions for each motor
-        [(m1p1, m2p1, ...), ..., (m1pN, m2pN)]
-        where m1p1 is motor 1, position 1
+    point_args : list
+        List of arguments used to generate the points for the scan
     """
     def _pre_scan(self):
         self._offsets = {}
