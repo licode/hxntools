@@ -83,7 +83,7 @@ class MultipleMotorAbsPlan(MultipleMotorPlan):
         yield from super()._pre_scan()
 
 
-class MultipleMotorDeltaScan(MultipleMotorPlan):
+class MultipleMotorDeltaPlan(MultipleMotorPlan):
     """Delta (relative) scan over multi-motor trajectory
 
     Parameters
@@ -111,7 +111,7 @@ class MultipleMotorDeltaScan(MultipleMotorPlan):
         yield Msg('wait', None, 'A')
 
 
-class HxnFermatPlan(HxnScanMixin1D, MultipleMotorDeltaScan):
+class HxnFermatPlan(HxnScanMixin1D, MultipleMotorDeltaPlan):
     """Relative fermat spiral scan
 
     Parameters
