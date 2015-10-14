@@ -37,16 +37,13 @@ class MultipleMotorPlan(scans.ScanND):
 
         # TODO ScanND overwrites this with cycler.keys...
         self.motors = list(motors)
-        # TODO I'd like these to be reusable, but my other stuff relies on
-        # the number of points being determined prior to pre-scan
-        self.points = self.get_points(*self.point_args)
-        self.num = len(self.points)
 
     def _pre_scan(self):
-        points = self.points
-        # points = self.get_points(*self.point_args)
+        self.points = self.get_points(*self.point_args)
+        self.num = len(self.points[0])
+
         self.cycler = None
-        for motor, m_points in zip(self._motors, points):
+        for motor, m_points in zip(self._motors, self.points):
             m_points = np.asarray(m_points) + self._offsets[motor]
             c = cycler(motor, m_points)
             if self.cycler is None:

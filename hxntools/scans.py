@@ -40,8 +40,8 @@ def scan_setup(detectors, total_points):
 
 class HxnScanMixin1D:
     def _pre_scan(self):
-        yield from scan_setup(self.detectors, total_points=self.num)
         yield from super()._pre_scan()
+        yield from scan_setup(self.detectors, total_points=self.num)
 
 
 class HxnAbsScan(HxnScanMixin1D, scans.AbsScan):
