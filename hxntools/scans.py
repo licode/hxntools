@@ -3,6 +3,7 @@ import logging
 from boltons.iterutils import chunked
 from bluesky.run_engine import Msg
 from bluesky import (scans, simple_scans)
+from bluesky.standard_config import gs
 from ophyd.controls import EpicsSignal
 from ophyd.controls.positioner import Positioner
 
@@ -14,6 +15,21 @@ scaler1_output_mode = EpicsSignal('XF:03IDC-ES{Sclr:1}OutputMode',
                                   name='scaler1_output_mode')
 scaler1_stopall = EpicsSignal('XF:03IDC-ES{Sclr:1}StopAll',
                               name='scaler1_stopall')
+
+next_scan_id_proc = EpicsSignal('XF:03IDC-ES{Status}NextScanID-Cmd.PROC',
+                                name='next_scan_id_proc')
+scan_id = EpicsSignal('XF:03IDC-ES{Status}ScanID-I',
+                      name='scan_id')
+
+
+def get_next_scan_id():
+    last_id = int(scan_id.get(use_monitor=False))
+    next_scan_id_proc.put(1, wait=True)
+
+    new_id = int(scan_id.get(use_monitor=False))
+    if last_id == new_id:
+        raise RuntimeError('Scan ID not changed')
+    return new_id
 
 
 def check_scaler():
@@ -40,6 +56,9 @@ def scan_setup(detectors, total_points):
 
 class HxnScanMixin1D:
     def _pre_scan(self):
+        # bluesky increments the scan id by one in open_run,
+        # so set it appropriately
+        gs.RE.md['scan_id'] = get_next_scan_id() - 1
         yield from super()._pre_scan()
         yield from scan_setup(self.detectors, total_points=self.num)
 
