@@ -29,9 +29,10 @@ class MasterDetector(object):
         return self._master.trigger(*args, **kwargs)
 
     def configure(self, state=None):
-        self._master.configure()
+        # TODO not sure how state should work here
+        self._master.configure(state=state)
         for slave in self._slaves:
-            slave.configure()
+            slave.configure(state={})
 
     def deconfigure(self):
         self._master.deconfigure()

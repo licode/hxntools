@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import numpy as np
 
@@ -31,16 +32,22 @@ class MultipleMotorPlan(scans.ScanND):
 
     def __init__(self, detectors, motors, point_args):
         self.detectors = detectors
-        self._motors = list(motors)
         self.point_args = list(point_args)
         self.num = None
 
-        # TODO ScanND overwrites this with cycler.keys...
+        self._motors = list(motors)
+        # the (non-private) .motors attribute is used by subscriptions and
+        # is eventually overwritten by the cycler list. since we want
+        # to keep the ordering of motors as the user specified, we
+        # keep it in _motors
         self.motors = list(motors)
 
-    def _pre_scan(self):
+    @asyncio.coroutine
+    def _pre_scan_calculate(self):
+        # Called by HxnScanMixin1D - if in _pre_scan instead,
+        # the order of operations is wrong and num will be None
+        # when detectors are configured.
         self.points = self.get_points(*self.point_args)
-        self.num = len(self.points[0])
 
         self.cycler = None
         for motor, m_points in zip(self._motors, self.points):
@@ -52,7 +59,6 @@ class MultipleMotorPlan(scans.ScanND):
                 self.cycler += c
 
         self.num = len(self.cycler)
-        yield from super()._pre_scan()
 
     def get_points(self, *args):
         '''
@@ -78,9 +84,10 @@ class MultipleMotorAbsPlan(MultipleMotorPlan):
     point_args : list
         List of arguments used to generate the points for the scan
     """
-    def _pre_scan(self):
+    @asyncio.coroutine
+    def _pre_scan_calculate(self):
         self._offsets = defaultdict(lambda: 0.0)
-        yield from super()._pre_scan()
+        yield from super()._pre_scan_calculate()
 
 
 class MultipleMotorDeltaPlan(MultipleMotorPlan):
@@ -95,13 +102,14 @@ class MultipleMotorDeltaPlan(MultipleMotorPlan):
     point_args : list
         List of arguments used to generate the points for the scan
     """
-    def _pre_scan(self):
+    @asyncio.coroutine
+    def _pre_scan_calculate(self):
         self._offsets = {}
         for motor in self.motors:
             ret = yield Msg('read', motor)
             current_value = ret[motor.name]['value']
             self._offsets[motor] = current_value
-        yield from super()._pre_scan()
+        yield from super()._pre_scan_calculate()
 
     def _post_scan(self):
         # Return the motor to its original position.
@@ -147,6 +155,7 @@ class HxnFermatPlan(HxnScanMixin1D, MultipleMotorDeltaPlan):
         motors = [motor1, motor2]
         point_args = [x_range, y_range, dr, factor]
         super().__init__(detectors, motors, point_args, **kwargs)
+        self.setup_attrs()
 
     def get_points(self, x_range, y_range, dr, factor):
         return spiral_fermat(x_range, y_range, dr, factor)

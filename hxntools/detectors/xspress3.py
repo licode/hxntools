@@ -111,7 +111,7 @@ class Xspress3FileStore(AreaDetectorFileStore):
         self._old_image_mode = self._image_mode.value
         self._old_acquire = self._acquire.value
 
-        super().deconfigure(*args, **kwargs)
+        super().deconfigure()
 
     def set(self, total_points=0, master=None, external_trig=False,
             **kwargs):
@@ -137,7 +137,7 @@ class Xspress3FileStore(AreaDetectorFileStore):
             self._det.num_images.put(1)
 
         logger.debug('Configuring other filestore stuff')
-        super(Xspress3FileStore, self).configure(*args, **kwargs)
+        super(Xspress3FileStore, self).configure(state=state)
 
         logger.debug('Making the filename')
         self._make_filename(seq=0)

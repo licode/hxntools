@@ -1,12 +1,7 @@
 import logging
 
 from ophyd.controls import EpicsSignal
-try:
-    from ophyd.utils import DisconnectedError
-except Exception as ex:
-    # TODO: update ophyd (didn't realize this wasn't updated and
-    # don't want to do this right before the weekend... KL 10/9)
-    DisconnectedError = Exception
+from ophyd.utils import DisconnectedError
 
 logger = logging.getLogger(__name__)
 

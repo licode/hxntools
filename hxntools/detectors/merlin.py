@@ -59,7 +59,7 @@ class MerlinFileStore(AreaDetectorFSIterativeWrite):
                 }
 
     def configure(self, state=None):
-        super(MerlinFileStore, self).configure(*args, **kwargs)
+        super(MerlinFileStore, self).configure(state=state)
         ext_trig = (self._master is not None or self._external_trig)
 
         det = self._det
@@ -106,8 +106,8 @@ class MerlinFileStore(AreaDetectorFSIterativeWrite):
         if ext_trig:
             det.acquire.put(1, wait=False)
 
-    def deconfigure(self, *args, **kwargs):
-        super(MerlinFileStore, self).deconfigure(*args, **kwargs)
+    def deconfigure(self):
+        super(MerlinFileStore, self).deconfigure()
 
         self._total_points = None
         self._det.tiff1.capture.put(0)

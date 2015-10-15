@@ -40,9 +40,9 @@ class TimepixFileStore(AreaDetectorFileStoreTIFF):
         self._det.tiff1.enable.put(1)
         self._det.tiff1.capture.put(1)
 
-    def deconfigure(self, *args, **kwargs):
+    def deconfigure(self):
         # Wait for the last frame
-        super(TimepixFileStore, self).deconfigure(*args, **kwargs)
+        super(TimepixFileStore, self).deconfigure()
 
         self._total_points = None
         self._det.tiff1.capture.put(0)

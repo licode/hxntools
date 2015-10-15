@@ -28,7 +28,7 @@ def get_next_scan_id():
 
     new_id = int(scan_id.get(use_monitor=False))
     if last_id == new_id:
-        raise RuntimeError('Scan ID not changed')
+        raise RuntimeError('Scan ID unchanged. Check hxnutil IOC.')
     return new_id
 
 
@@ -59,8 +59,10 @@ class HxnScanMixin1D:
         # bluesky increments the scan id by one in open_run,
         # so set it appropriately
         gs.RE.md['scan_id'] = get_next_scan_id() - 1
-        yield from super()._pre_scan()
+        if hasattr(self, '_pre_scan_calculate'):
+            yield from self._pre_scan_calculate()
         yield from scan_setup(self.detectors, total_points=self.num)
+        yield from super()._pre_scan()
 
 
 class HxnAbsScan(HxnScanMixin1D, scans.AbsScan):
@@ -81,9 +83,16 @@ class HxnInnerDeltaScan(HxnScanMixin1D, scans.InnerProductDeltaScan):
 
 class HxnScanMixinOuter:
     def _pre_scan(self):
+        # bluesky increments the scan id by one in open_run,
+        # so set it appropriately
+        gs.RE.md['scan_id'] = get_next_scan_id() - 1
+
         total_points = 1
         for motor, start, stop, num, snake in chunked(self.args, 5):
             total_points *= num
+
+        if hasattr(self, '_pre_scan_calculate'):
+            yield from self._pre_scan_calculate()
 
         yield from scan_setup(self.detectors, total_points=total_points)
         yield from super()._pre_scan()
