@@ -58,7 +58,7 @@ class MerlinFileStore(AreaDetectorFSIterativeWrite):
                                  'shape': size, 'dtype': 'array'}
                 }
 
-    def configure(self, *args, **kwargs):
+    def configure(self, state=None):
         super(MerlinFileStore, self).configure(*args, **kwargs)
         ext_trig = (self._master is not None or self._external_trig)
 

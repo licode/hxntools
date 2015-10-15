@@ -119,7 +119,7 @@ class Xspress3FileStore(AreaDetectorFileStore):
         self._master = master
         self._external_trig = external_trig
 
-    def configure(self, *args, **kwargs):
+    def configure(self, state=None):
         ext_trig = (self._master is not None or self._external_trig)
 
         logger.debug('Stopping xspress3 acquisition')

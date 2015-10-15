@@ -199,7 +199,7 @@ class Zebra(ADBase):
         mode_setup()
         self._scan_mode = scan_mode
 
-    def configure(self):
+    def configure(self, state=None):
         pass
 
     def deconfigure(self):
