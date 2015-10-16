@@ -76,6 +76,9 @@ class MerlinFileStore(AreaDetectorFSIterativeWrite):
         det.array_callbacks.put('Enable')
 
         if ext_trig:
+            if self._total_points is None:
+                raise RuntimeError('set was not called on this detector')
+
             det.num_images.put(self._total_points)
             det.image_mode.put('Multiple')
             det.trigger_mode.put('External')
@@ -110,6 +113,7 @@ class MerlinFileStore(AreaDetectorFSIterativeWrite):
         super(MerlinFileStore, self).deconfigure()
 
         self._total_points = None
+        self._master = None
         self._det.tiff1.capture.put(0)
 
     def _make_filename(self, **kwargs):

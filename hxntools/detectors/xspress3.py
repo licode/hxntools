@@ -72,6 +72,8 @@ class Xspress3FileStore(AreaDetectorFileStore):
                    for ch in channels}
 
         count = len(timestamps)
+        if count == 0:
+            return {}
 
         def get_datum_args():
             for ch in channels:
@@ -106,6 +108,7 @@ class Xspress3FileStore(AreaDetectorFileStore):
 
         self._det.trigger_mode.put('Internal')
         self._total_points = None
+        self._master = None
 
         # TODO
         self._old_image_mode = self._image_mode.value
@@ -130,6 +133,9 @@ class Xspress3FileStore(AreaDetectorFileStore):
         if ext_trig:
             logger.debug('Setting up external triggering')
             self._det.trigger_mode.put('TTL Veto Only')
+            if self._total_points is None:
+                raise RuntimeError('set was not called on this detector')
+
             self._det.num_images.put(self._total_points)
         else:
             logger.debug('Setting up internal triggering')
