@@ -126,9 +126,9 @@ class HxnFermatPlan(HxnScanMixin1D, MultipleMotorDeltaPlan):
     ----------
     detectors : list
         list of 'readable' objects
-    motorx : object
+    x_motor : object
         any 'setable' object (motor, temp controller, etc.)
-    motory : object
+    y_motor : object
         any 'setable' object (motor, temp controller, etc.)
     x_range : float
         x range of spiral
@@ -148,14 +148,23 @@ class HxnFermatPlan(HxnScanMixin1D, MultipleMotorDeltaPlan):
     >>> my_plan.x_range = 2.0
     >>> RE(my_plan)
     """
+    _fields = MultipleMotorPlan._fields + ['x_motor', 'y_motor', 'x_range',
+                                           'y_range', 'dr', 'factor']
 
-    def __init__(self, detectors, motor1, motor2, x_range, y_range, dr, factor,
+    def __init__(self, detectors, x_motor, y_motor, x_range, y_range, dr, factor,
                  **kwargs):
 
-        motors = [motor1, motor2]
+        motors = [x_motor, y_motor]
         point_args = [x_range, y_range, dr, factor]
         super().__init__(detectors, motors, point_args, **kwargs)
         self.setup_attrs()
+
+        self.x_motor = x_motor
+        self.y_motor = y_motor
+        self.x_range = x_range
+        self.y_range = y_range
+        self.dr = dr
+        self.factor = factor
 
     def get_points(self, x_range, y_range, dr, factor):
         return spiral_fermat(x_range, y_range, dr, factor)
@@ -166,9 +175,9 @@ class HxnFermatScan(_BundledScan):
 
     Parameters
     ----------
-    motorx : object
+    x_motor : object
         any 'setable' object (motor, temp controller, etc.)
-    motory : object
+    y_motor : object
         any 'setable' object (motor, temp controller, etc.)
     x_range : float
         x range of spiral
