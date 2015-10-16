@@ -16,11 +16,11 @@ def spiral_simple(x_range_egu, y_range_egu, dr_egu, nth):
     nth : float
         Number of theta steps
     """
-    r_max_egu = np.sqrt((x_range_egu / 2.) ** 2 + (y_range_egu / 2.) ** 2)
-    num_ring = 1 + int(r_max_egu / dr_egu)
-
     half_x = x_range_egu / 2
     half_y = y_range_egu / 2
+
+    r_max_egu = np.sqrt(half_x ** 2 + half_y ** 2)
+    num_ring = 1 + int(r_max_egu / dr_egu)
 
     x_points = []
     y_points = []
@@ -60,8 +60,8 @@ def spiral_fermat(x_range_egu, y_range_egu, dr_egu, factor):
 
     x_points, y_points = [], []
 
-    diag = np.sqrt(x_range_egu ** 2 + y_range_egu ** 2)
-    num_rings = int((1.5 * diag * factor / dr_egu) ** 2)
+    diag = np.sqrt(half_x ** 2 + half_y ** 2)
+    num_rings = int((1.5 * diag / (dr_egu / factor)) ** 2)
     for i_ring in range(1, num_rings):
         radius_egu = np.sqrt(i_ring) * dr_egu / factor
         angle = phi * i_ring
