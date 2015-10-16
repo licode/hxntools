@@ -108,7 +108,6 @@ def get_scan_info(header):
         motors = []
         for key in motor_keys:
             try:
-                print(key, start_doc[key])
                 motors.append(_eval(start_doc[key]).name)
             except Exception:
                 pass
