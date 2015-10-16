@@ -87,6 +87,9 @@ def get_scan_info(header):
     elif scan_type in fermat_scans:
         motor_keys = ['x_motor', 'y_motor']
         dimensions = [int(start_doc['num'])]
+        logger.debug('Scan %s (%s) is a fermat scan (%s) %d points',
+                     start_doc.scan_id, start_doc.uid, scan_type,
+                     dimensions[0])
         try:
             range_ = [(float(start_doc['x_range']),
                        float(start_doc['y_range']))]
