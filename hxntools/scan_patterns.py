@@ -61,7 +61,7 @@ def spiral_fermat(x_range_egu, y_range_egu, dr_egu, factor):
     x_points, y_points = [], []
 
     diag = np.sqrt(x_range_egu ** 2 + y_range_egu ** 2)
-    num_rings = int((1.5 * diag / dr_egu) ** 2)
+    num_rings = int((1.5 * diag * factor / dr_egu) ** 2)
     for i_ring in range(1, num_rings):
         radius_egu = np.sqrt(i_ring) * dr_egu / factor
         angle = phi * i_ring
