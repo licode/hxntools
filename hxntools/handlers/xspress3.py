@@ -2,10 +2,13 @@ from __future__ import print_function
 
 import h5py
 import numpy as np
+import logging
 
 import filestore.api as fs_api
 from filestore.handlers import HandlerBase
 
+
+logger = logging.getLogger(__name__)
 
 FMT_ROI_KEY = 'entry/instrument/detector/NDAttributes/CHAN{}ROI{}'
 XRF_DATA_KEY = 'entry/instrument/detector/data'
@@ -37,21 +40,34 @@ class Xspress3HDF5Handler(HandlerBase):
         super(Xspress3HDF5Handler, self).close()
         self._file.close()
         self._file = None
+        self._dataset = None
 
     @property
     def dataset(self):
         return self._dataset
 
+    def _get_dataset(self):
+        if self._dataset is not None:
+            return
+
+        hdf_dataset = self._file[self._key]
+        try:
+            self._dataset = np.asarray(hdf_dataset)
+        except MemoryError as ex:
+            logger.warning('Unable to load the full dataset into memory',
+                           exc_info=ex)
+            self._dataset = hdf_dataset
+
+    def __del__(self):
+        self.close()
+
     def __call__(self, frame=None, channel=None):
         # Don't read out the dataset until it is requested for the first time.
-        if not self._dataset:
-            self._dataset = self._file[self._key]
-
+        self._get_dataset()
         return self._dataset[frame, channel - 1, :].squeeze()
 
     def get_roi(self, roi_info, frame=None, max_points=None):
-        if not self._dataset:
-            self._dataset = self._file[self._key]
+        self._get_dataset()
 
         chan = roi_info.chan
         bin_low = roi_info.bin_low
