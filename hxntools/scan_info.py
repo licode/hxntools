@@ -37,8 +37,20 @@ fly_scans = ('FlyPlan1D', 'FlyPlan2D')
 def get_scan_info(header):
     # TODO some of this can/should be redone with the new metadatastore
     # fields (derived and otherwise)
+    info = {'num': 0,
+            'dimensions': [],
+            'motors': [],
+            'range': [],
+            'pyramid': False,
+            }
+
     start_doc = header['start']
-    scan_args = start_doc['scan_args']
+    try:
+        scan_args = start_doc['scan_args']
+    except KeyError:
+        logger.error('No scan args for scan %s', start_doc['uid'])
+        return info
+
     scan_type = start_doc['scan_type']
     motors = None
     range_ = None
@@ -100,7 +112,11 @@ def get_scan_info(header):
         logger.debug('Scan %s (%s) is a 1D scan (%s)', start_doc.scan_id,
                      start_doc.uid, scan_type)
         # 1D scans
-        dimensions = [int(start_doc['num'])]
+        try:
+            dimensions = [int(start_doc['num'])]
+        except KeyError:
+            # some scans with the bluesky md changes didn't save num
+            dimensions = []
         motor_keys = ['motor']
     else:
         msg = 'Unrecognized scan type (uid={} {})'.format(start_doc.uid,
@@ -117,12 +133,12 @@ def get_scan_info(header):
 
     num = np.product(dimensions)
 
-    return {'num': num,
-            'dimensions': dimensions,
-            'motors': motors,
-            'range': range_,
-            'pyramid': pyramid,
-            }
+    info['num'] = num
+    info['dimensions'] = dimensions
+    info['motors'] = motors
+    info['range'] = range_
+    info['pyramid'] = pyramid
+    return info
 
 
 class ScanInfo(object):
