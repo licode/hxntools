@@ -3,7 +3,7 @@ import os
 import numpy as np
 
 
-def makedirs(path, mode=0777):
+def makedirs(path, mode=0o777):
     '''Recursively make directories and set permissions'''
     # Permissions not working with os.makedirs -
     # See: http://stackoverflow.com/questions/5231901
@@ -21,13 +21,3 @@ def makedirs(path, mode=0777):
     os.chmod(path, mode)
     ret.append(path)
     return ret
-
-
-def get_total_scan_points(points):
-    '''
-    points : ndarray, list, or integer
-
-    returns: product of all points
-    '''
-    points = np.asarray(points)
-    return np.prod(points)

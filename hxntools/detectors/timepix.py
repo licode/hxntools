@@ -6,7 +6,7 @@ import logging
 
 from ophyd.controls.areadetector.detectors import (AreaDetector, ADSignal)
 from ophyd.controls.area_detector import AreaDetectorFileStoreTIFF
-from .utils import (makedirs, get_total_scan_points)
+from .utils import makedirs
 
 
 logger = logging.getLogger(__name__)
@@ -31,22 +31,20 @@ class TimepixFileStore(AreaDetectorFileStoreTIFF):
         self._det = det
 
     def _extra_AD_configuration(self):
-        num_points = get_total_scan_points(self._num_scan_points)
-
         self._det.array_callbacks.put('Enable')
         self._det.num_images.put(1)
         self._det.tiff1.auto_increment.put(1)
         self._det.tiff1.auto_save.put(1)
-        self._det.tiff1.num_capture.put(num_points)
+        self._det.tiff1.num_capture.put(self._total_points)
         self._det.tiff1.file_write_mode.put(2)
         self._det.tiff1.enable.put(1)
         self._det.tiff1.capture.put(1)
 
-    def deconfigure(self, *args, **kwargs):
+    def deconfigure(self):
         # Wait for the last frame
-        super(TimepixFileStore, self).deconfigure(*args, **kwargs)
+        super(TimepixFileStore, self).deconfigure()
 
-        self.set_scan(None)
+        self._total_points = None
         self._det.tiff1.capture.put(0)
 
     def _make_filename(self, **kwargs):
@@ -54,13 +52,8 @@ class TimepixFileStore(AreaDetectorFileStoreTIFF):
 
         makedirs(self._store_file_path)
 
-    def set_scan(self, scan):
-        self._scan = scan
-
-        if scan is None:
-            return
-
-        self._num_scan_points = scan.npts + 1
+    def set(self, total_points=0, **kwargs):
+        self._total_points = total_points
 
 
 class TimepixDetector(AreaDetector):
@@ -130,7 +123,7 @@ class TimepixDetector(AreaDetector):
                                           name=self.name)
 
     def fly_configure(self, path, prefix, num_points,
-                      raw=False, external=True, create_dirs=True):
+                      raw=False, external_trig=True, create_dirs=True):
         # NOTE: due to timepix IOC-related issues, can't use external
         # triggering reliably, so step scan and fly scan configuration
         # are different
