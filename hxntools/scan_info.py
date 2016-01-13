@@ -92,6 +92,7 @@ def get_scan_info(header):
         except Exception:
             motors = []
 
+        exposure_time = float(start_doc.get('exposure_time', 0.0))
         try:
             dimensions = args[3::5]
             range0 = args[1::5]
@@ -118,6 +119,7 @@ def get_scan_info(header):
     elif scan_type in step_1d or 'num' in start_doc:
         logger.debug('Scan %s (%s) is a 1D scan (%s)', start_doc.scan_id,
                      start_doc.uid, scan_type)
+        exposure_time = float(start_doc.get('exposure_time', 0.0))
         # 1D scans
         try:
             dimensions = [int(start_doc['num'])]
