@@ -74,6 +74,8 @@ class MerlinFileStore(AreaDetectorFSIterativeWrite):
         plugin.file_number.put(0)
 
         det.array_callbacks.put('Enable')
+        # NOTE: recently transform has been used
+        det.trans1.enable.put(1)
 
         if ext_trig:
             if self._total_points is None:
@@ -95,7 +97,8 @@ class MerlinFileStore(AreaDetectorFSIterativeWrite):
         plugin.auto_increment.put(1)
         plugin.auto_save.put(1)
         plugin.num_capture.put(self._total_points)
-        plugin.file_write_mode.put(2)
+        plugin.file_write_mode.put('Stream')
+        # plugin.file_write_mode.put('Single')
         plugin.enable.put(1)
         plugin.capture.put(1)
 
