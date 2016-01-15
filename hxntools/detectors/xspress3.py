@@ -4,16 +4,19 @@ import logging
 import uuid
 import itertools
 
-from collections import namedtuple
+from collections import (namedtuple, OrderedDict)
 
 import h5py
 import filestore.api as fs_api
 from filestore.commands import bulk_insert_datum
 
-from ophyd.controls.areadetector.detectors import (AreaDetector, ADBase,
-                                                   ADSignal)
-from ophyd.controls.area_detector import AreaDetectorFileStore
-from ophyd.controls.detector import (DetectorStatus, Detector)
+from ophyd.areadetector import AreaDetector
+from ophyd.areadetector import CamBase
+from ophyd.areadetector import (EpicsSignalWithRBV as SignalWithRBV)
+# from ophyd.area_detector import AreaDetectorFileStore
+from ophyd.device import (DeviceStatus,
+                          Component as C,
+                          DynamicDeviceComponent as DDC)
 
 from .utils import makedirs
 
@@ -23,250 +26,402 @@ from ..handlers.xspress3 import XRF_DATA_KEY
 logger = logging.getLogger(__name__)
 
 
-class Xspress3FileStore(AreaDetectorFileStore):
-    '''Xspress3 acquisition -> filestore'''
+# class Xspress3FileStore(AreaDetectorFileStore):
+#     '''Xspress3 acquisition -> filestore'''
+#
+#     def __init__(self, det, basename, file_template='%s%s_%6.6d.h5',
+#                  config_time=0.5,
+#                  mds_key_format='{self._det.name}_ch{chan}',
+#                  **kwargs):
+#         super().__init__(basename, cam='', reset_acquire=False,
+#                          use_image_mode=False, **kwargs)
+#
+#         self._det = det
+#         # Use the EpicsSignal file_template from the detector
+#         self._file_template = det.hdf5.file_template
+#         # (_file_template is used in _make_filename, etc)
+#         self.file_template = file_template
+#         self._filestore_res = None
+#         self.channels = list(range(1, det.num_channels + 1))
+#         self._total_points = None
+#         self._master = None
+#         self._external_trig = None
+#         self._config_time = config_time
+#         self.mds_keys = {chan: mds_key_format.format(self=self, chan=chan)
+#                          for chan in self.channels}
+#         self._file_plugin = None
+#
+#     def _get_datum_args(self, seq_num):
+#         for chan in self.channels:
+#             yield {'frame': seq_num, 'channel': chan}
+#
+#     def read(self):
+#         timestamp = time.time()
+#         uids = [str(uuid.uuid4()) for ch in self.channels]
+#
+#         bulk_insert_datum(self._filestore_res, uids,
+#                           self._get_datum_args(self._abs_trigger_count))
+#
+#         self._abs_trigger_count += 1
+#         return {self.mds_keys[ch]: {'timestamp': timestamp,
+#                                     'value': uid,
+#                                     }
+#                 for uid, ch in zip(uids, self.channels)
+#                 }
+#
+#     def bulk_read(self, timestamps):
+#         channels = self.channels
+#         ch_uids = {ch: [str(uuid.uuid4()) for ts in timestamps]
+#                    for ch in channels}
+#
+#         count = len(timestamps)
+#         if count == 0:
+#             return {}
+#
+#         def get_datum_args():
+#             for ch in channels:
+#                 for seq_num in range(count):
+#                     yield {'frame': seq_num,
+#                            'channel': ch}
+#
+#         uids = [ch_uids[ch] for ch in channels]
+#         bulk_insert_datum(self._filestore_res, itertools.chain(*uids),
+#                           get_datum_args())
+#
+#         return {self.mds_keys[ch]: ch_uids[ch]
+#                 for ch in channels
+#                 }
+#
+#     def _make_filename(self, **kwargs):
+#         super()._make_filename(**kwargs)
+#
+#         makedirs(self._store_file_path)
+#
+#     def deconfigure(self, *args, **kwargs):
+#         # self._det.hdf5.capture.put(0)
+#         try:
+#             i = 0
+#             while self._det.hdf5.capture.value == 1:
+#                 i += 1
+#                 if (i % 50) == 0:
+#                     logger.warning('Still capturing data .... waiting.')
+#                 time.sleep(0.1)
+#         except KeyboardInterrupt:
+#             logger.warning('Still capturing data .... interrupted.')
+#
+#         self._det.trigger_mode.put('Internal')
+#         self._total_points = None
+#         self._master = None
+#
+#         # TODO
+#         self._old_image_mode = self._image_mode.value
+#         self._old_acquire = self._acquire.value
+#
+#         super().deconfigure()
+#
+#     def set(self, total_points=0, master=None, external_trig=False,
+#             **kwargs):
+#         self._total_points = total_points
+#         self._master = master
+#         self._external_trig = external_trig
+#
+#     def configure(self, state=None):
+#         ext_trig = (self._master is not None or self._external_trig)
+#
+#         logger.debug('Stopping xspress3 acquisition')
+#         self._det.acquire.put(0)
+#
+#         time.sleep(0.1)
+#
+#         if ext_trig:
+#             logger.debug('Setting up external triggering')
+#             self._det.trigger_mode.put('TTL Veto Only')
+#             if self._total_points is None:
+#                 raise RuntimeError('set was not called on this detector')
+#
+#             self._det.num_images.put(self._total_points)
+#         else:
+#             logger.debug('Setting up internal triggering')
+#             self._det.trigger_mode.put('Internal')
+#             self._det.num_images.put(1)
+#
+#         logger.debug('Configuring other filestore stuff')
+#         super(Xspress3FileStore, self).configure(state=state)
+#
+#         logger.debug('Making the filename')
+#         self._make_filename(seq=0)
+#
+#         logger.debug('Setting up hdf5 plugin: ioc path: %s filename: %s',
+#                      self._ioc_file_path, self._filename)
+#         self._det.hdf5.file_template.put(self.file_template, wait=True)
+#         self._det.hdf5.file_number.put(0)
+#         self._det.hdf5.blocking_callbacks.put(1)
+#         self._det.hdf5.enable.put(1)
+#         self._det.hdf5.file_path.put(self._ioc_file_path, wait=True)
+#         self._det.hdf5.file_name.put(self._filename, wait=True)
+#
+#         if not self._det.hdf5.file_path_exists.value:
+#             raise IOError("Path {} does not exits on IOC!! Please Check"
+#                           .format(self._det.hdf5.file_path.value))
+#
+#         logger.debug('Inserting the filestore resource')
+#         self._filestore_res = self._insert_fs_resource()
+#
+#         logger.debug('Erasing old spectra')
+#         self._det.xs_erase.put(1)
+#         self._det.hdf5.capture.put(1, wait=False)
+#
+#         if ext_trig:
+#             logger.debug('Starting acquisition (waiting for triggers)')
+#             self._det.acquire.put(1, wait=False)
+#
+#         # Xspress3 needs a bit of time to configure itself...
+#         time.sleep(self._config_time)
+#
+#     @property
+#     def count_time(self):
+#         return self._det.acquire_period.value
+#
+#     @count_time.setter
+#     def count_time(self, val):
+#         self._det.acquire_period.put(val)
+#
+#     def acquire(self, **kwargs):
+#         status = DetectorStatus(self)
+#         status._finished()
+#         # scaler/zebra take care of timing
+#         return status
+#
+#     def describe(self):
+#         # TODO: describe is called prior to configure, so the filestore resource
+#         #       is not yet generated
+#         size = (self._det.hdf5.width.value, )
+#
+#         spec_desc = {'external': 'FILESTORE:',
+#                      'dtype': 'array',
+#                      'shape': size,
+#                      }
+#
+#         if self._filestore_res is not None:
+#             source = 'FileStore:{0.id!s}'.format(self._filestore_res)
+#         else:
+#             source = 'FileStore:'
+#
+#         spec_desc['source'] = source
+#
+#         desc = {}
+#         for chan in self.channels:
+#             desc['{}_ch{}'.format(self._det.name, chan)] = spec_desc
+#
+#         return desc
+#
+#     def _insert_fs_resource(self):
+#         return fs_api.insert_resource(Xspress3HDF5Handler.HANDLER_NAME,
+#                                       self.store_filename, {})
+#
+#     @property
+#     def store_filename(self):
+#         return self._store_filename
+#
+#     @property
+#     def ioc_filename(self):
+#         return self._ioc_filename
 
-    def __init__(self, det, basename, file_template='%s%s_%6.6d.h5',
-                 config_time=0.5,
-                 mds_key_format='{self._det.name}_ch{chan}',
-                 **kwargs):
-        super().__init__(basename, cam='', reset_acquire=False,
-                         use_image_mode=False, **kwargs)
+class Xspress3DetectorCam(CamBase):
+    '''Quantum Detectors Xspress3 detector'''
+    xs_config_path = C(SignalWithRBV, 'CONFIG_PATH')
+    xs_config_save_path = C(SignalWithRBV, 'CONFIG_SAVE_PATH')
+    xs_connect = C(EpicsSignal, 'CONNECT')
+    xs_connected = C(EpicsSignal, 'CONNECTED')
+    xs_ctrl_dtc = C(SignalWithRBV, 'CTRL_DTC')
+    xs_ctrl_mca_roi = C(SignalWithRBV, 'CTRL_MCA_ROI')
+    xs_debounce = C(SignalWithRBV, 'DEBOUNCE')
+    xs_disconnect = C(EpicsSignal, 'DISCONNECT')
+    xs_erase = C(EpicsSignal, 'ERASE')
+    xs_erase_array_counters = C(EpicsSignal, 'ERASE_ArrayCounters')
+    xs_erase_attr_reset = C(EpicsSignal, 'ERASE_AttrReset')
+    xs_erase_proc_reset_filter = C(EpicsSignal, 'ERASE_PROC_ResetFilter')
+    xs_frame_count = C(EpicsSignalRO, 'FRAME_COUNT_RBV')
+    xs_hdf_capture = C(EpicsSignalRO, 'HDF5:Capture_RBV')
+    xs_hdf_num_capture_calc = C(EpicsSignal, 'HDF5:NumCapture_CALC')
+    xs_invert_f0 = C(SignalWithRBV, 'INVERT_F0')
+    xs_invert_veto = C(SignalWithRBV, 'INVERT_VETO')
+    xs_max_frames = C(EpicsSignalRO, 'MAX_FRAMES_RBV')
+    xs_max_frames_driver = C(EpicsSignalRO, 'MAX_FRAMES_DRIVER_RBV')
+    xs_max_num_channels = C(EpicsSignalRO, 'MAX_NUM_CHANNELS_RBV')
+    xs_max_spectra = C(SignalWithRBV, 'MAX_SPECTRA')
+    xs_name = C(EpicsSignal, 'NAME')
+    xs_num_cards = C(EpicsSignalRO, 'NUM_CARDS_RBV')
+    xs_num_channels = C(SignalWithRBV, 'NUM_CHANNELS')
+    xs_num_frames_config = C(SignalWithRBV, 'NUM_FRAMES_CONFIG')
+    xs_reset = C(EpicsSignal, 'RESET')
+    xs_restore_settings = C(EpicsSignal, 'RESTORE_SETTINGS')
+    xs_run_flags = C(SignalWithRBV, 'RUN_FLAGS')
+    xs_save_settings = C(EpicsSignal, 'SAVE_SETTINGS')
+    xs_trigger = C(EpicsSignal, 'TRIGGER')
+    xs_update = C(EpicsSignal, 'UPDATE')
+    xs_update_attr = C(EpicsSignal, 'UPDATE_AttrUpdate')
 
-        self._det = det
-        # Use the EpicsSignal file_template from the detector
-        self._file_template = det.hdf5.file_template
-        # (_file_template is used in _make_filename, etc)
-        self.file_template = file_template
-        self._filestore_res = None
-        self.channels = list(range(1, det.num_channels + 1))
-        self._total_points = None
-        self._master = None
-        self._external_trig = None
-        self._config_time = config_time
-        self.mds_keys = {chan: mds_key_format.format(self=self, chan=chan)
-                         for chan in self.channels}
-        self._file_plugin = None
 
-    def _get_datum_args(self, seq_num):
-        for chan in self.channels:
-            yield {'frame': seq_num, 'channel': chan}
+class Xspress3Roi(Device):
+    '''A configurable Xspress3 EPICS ROI'''
+
+    # prefix: C{channel}_   MCA_ROI{self.roi_num}
+    bin_low = FC(SignalWithRBV, '{self.channel.prefix}{self.bin_suffix}_LLM')
+    bin_high = FC(SignalWithRBV, '{self.channel.prefix}{self.bin_suffix}_HLM')
+
+    # C{channel}_  ROI{self.roi_num}
+    value = C(EpicsSignalRO, 'Value_RBV')
+    value_sum = C(EpicsSignalRO, 'ValueSum_RBV')
+
+    def __init__(self, prefix, *, roi_num=0, use_sum=False,
+                 read_attrs=None, configuration_attrs=None, parent=None,
+                 bin_suffix=None, **kwargs):
+
+        if read_attrs is None:
+            if use_sum:
+                read_attrs = ['value_sum']
+            else:
+                read_attrs = ['value']
+
+        if configuration_attrs is None:
+            configuration_attrs = ['bin_low', 'bin_high']
+
+        channel = parent.parent
+        self._channel = channel
+        self._roi_num = roi_num
+        self._use_sum = use_sum
+
+        if bin_suffix is None:
+            bin_suffix = 'MCA_ROI{}'.format(roi_num)
+
+        self.bin_suffix = bin_suffix
+
+        super().__init__(prefix, parent=parent, read_attrs=read_attrs,
+                         configuration_attrs=configuration_attrs, **kwargs)
+
+    @property
+    def channel(self):
+        return self._channel
+
+    @property
+    def roi_num(self):
+        return self._roi_num
+
+    @property
+    def ev_low(self):
+        return bin_to_ev(self.bin_low.value)
+
+    @ev_low.setter
+    def ev_low(self, ev):
+        self.bin_low.value = ev_to_bin(ev)
+
+    @property
+    def ev_high(self):
+        return bin_to_ev(self.bin_high.value)
+
+    @ev_high.setter
+    def ev_high(self, ev):
+        self.bin_high.value = ev_to_bin(ev)
+
+    def clear(self):
+        if self.bin_low.value == self.bin_high.value == 0:
+            return
+
+        self.bin_low.put(0)
+        self.bin_high.put(0)
+        self.enable.put(0)
+
+    def set_roi(self, low, high, units='ev'):
+        if units == 'ev':
+            low = ev_to_bin(low)
+            high = ev_to_bin(high)
+        elif units == 'bin':
+            low = int(low)
+            high = int(high)
+        else:
+            raise ValueError('Unknown units. Expected either "ev" or "bin"')
+
+        enable = 1 if high > low else 0
+        changed = any([self.bin_high.get() != high,
+                       self.bin_low.get() != low,
+                       self.enable.get() != enable])
+
+        if changed:
+            logger.debug('Setting up EPICS ROI: name=%s bins=(%s, %s) '
+                         'enable=%s prefix=%s channel=%s',
+                         self.name, low, high, enable, self._prefix,
+                         self._channel)
+            if high <= self.bin_low.get():
+                self.bin_low.put(0)
+
+            self.bin_high.put(high)
+            self.bin_low.put(low)
+            self.enable.put(enable)
+
+    @property
+    def _read_signal(self):
+        '''The signal which is read for data acquisition'''
+        if self._use_sum:
+            return self.value_sum
+        return self.value
 
     def read(self):
-        timestamp = time.time()
-        uids = [str(uuid.uuid4()) for ch in self.channels]
-
-        bulk_insert_datum(self._filestore_res, uids,
-                          self._get_datum_args(self._abs_trigger_count))
-
-        self._abs_trigger_count += 1
-        return {self.mds_keys[ch]: {'timestamp': timestamp,
-                                    'value': uid,
-                                    }
-                for uid, ch in zip(uids, self.channels)
-                }
-
-    def bulk_read(self, timestamps):
-        channels = self.channels
-        ch_uids = {ch: [str(uuid.uuid4()) for ts in timestamps]
-                   for ch in channels}
-
-        count = len(timestamps)
-        if count == 0:
-            return {}
-
-        def get_datum_args():
-            for ch in channels:
-                for seq_num in range(count):
-                    yield {'frame': seq_num,
-                           'channel': ch}
-
-        uids = [ch_uids[ch] for ch in channels]
-        bulk_insert_datum(self._filestore_res, itertools.chain(*uids),
-                          get_datum_args())
-
-        return {self.mds_keys[ch]: ch_uids[ch]
-                for ch in channels
-                }
-
-    def _make_filename(self, **kwargs):
-        super()._make_filename(**kwargs)
-
-        makedirs(self._store_file_path)
-
-    def deconfigure(self, *args, **kwargs):
-        # self._det.hdf5.capture.put(0)
-        try:
-            i = 0
-            while self._det.hdf5.capture.value == 1:
-                i += 1
-                if (i % 50) == 0:
-                    logger.warning('Still capturing data .... waiting.')
-                time.sleep(0.1)
-        except KeyboardInterrupt:
-            logger.warning('Still capturing data .... interrupted.')
-
-        self._det.trigger_mode.put('Internal')
-        self._total_points = None
-        self._master = None
-
-        # TODO
-        self._old_image_mode = self._image_mode.value
-        self._old_acquire = self._acquire.value
-
-        super().deconfigure()
-
-    def set(self, total_points=0, master=None, external_trig=False,
-            **kwargs):
-        self._total_points = total_points
-        self._master = master
-        self._external_trig = external_trig
-
-    def configure(self, state=None):
-        ext_trig = (self._master is not None or self._external_trig)
-
-        logger.debug('Stopping xspress3 acquisition')
-        self._det.acquire.put(0)
-
-        time.sleep(0.1)
-
-        if ext_trig:
-            logger.debug('Setting up external triggering')
-            self._det.trigger_mode.put('TTL Veto Only')
-            if self._total_points is None:
-                raise RuntimeError('set was not called on this detector')
-
-            self._det.num_images.put(self._total_points)
-        else:
-            logger.debug('Setting up internal triggering')
-            self._det.trigger_mode.put('Internal')
-            self._det.num_images.put(1)
-
-        logger.debug('Configuring other filestore stuff')
-        super(Xspress3FileStore, self).configure(state=state)
-
-        logger.debug('Making the filename')
-        self._make_filename(seq=0)
-
-        logger.debug('Setting up hdf5 plugin: ioc path: %s filename: %s',
-                     self._ioc_file_path, self._filename)
-        self._det.hdf5.file_template.put(self.file_template, wait=True)
-        self._det.hdf5.file_number.put(0)
-        self._det.hdf5.blocking_callbacks.put(1)
-        self._det.hdf5.enable.put(1)
-        self._det.hdf5.file_path.put(self._ioc_file_path, wait=True)
-        self._det.hdf5.file_name.put(self._filename, wait=True)
-
-        if not self._det.hdf5.file_path_exists.value:
-            raise IOError("Path {} does not exits on IOC!! Please Check"
-                          .format(self._det.hdf5.file_path.value))
-
-        logger.debug('Inserting the filestore resource')
-        self._filestore_res = self._insert_fs_resource()
-
-        logger.debug('Erasing old spectra')
-        self._det.xs_erase.put(1)
-        self._det.hdf5.capture.put(1, wait=False)
-
-        if ext_trig:
-            logger.debug('Starting acquisition (waiting for triggers)')
-            self._det.acquire.put(1, wait=False)
-
-        # Xspress3 needs a bit of time to configure itself...
-        time.sleep(self._config_time)
-
-    @property
-    def count_time(self):
-        return self._det.acquire_period.value
-
-    @count_time.setter
-    def count_time(self, val):
-        self._det.acquire_period.put(val)
-
-    def acquire(self, **kwargs):
-        status = DetectorStatus(self)
-        status._finished()
-        # scaler/zebra take care of timing
-        return status
+        return {self.name: dict(value=self._read_signal.get(),
+                                timestamp=time.time())}
 
     def describe(self):
-        # TODO: describe is called prior to configure, so the filestore resource
-        #       is not yet generated
-        size = (self._det.hdf5.width.value, )
+        source = 'PV:{}'.format(self._read_signal.pvname)
+        return {self.name: dict(dtype='number', shape=[],
+                                source=source)}
 
-        spec_desc = {'external': 'FILESTORE:',
-                     'dtype': 'array',
-                     'shape': size,
-                     }
 
-        if self._filestore_res is not None:
-            source = 'FileStore:{0.id!s}'.format(self._filestore_res)
-        else:
-            source = 'FileStore:'
+def make_rois(rois):
+    defn = OrderedDict()
+    for roi in rois:
+        attr = 'roi{:02d}'.format(roi)
+        defn[attr] = (Xspress3ROI, 'ROI{}:'.format(roi), dict(roi_num=roi))
 
-        spec_desc['source'] = source
+    return defn
 
-        desc = {}
-        for chan in self.channels:
-            desc['{}_ch{}'.format(self._det.name, chan)] = spec_desc
 
-        return desc
+class Xspress3Channel(Device):
+    rois = DDC(make_rois(range(1, 17)))
+    vis_enabled = C(EpicsSignal, 'PluginControlVal')
 
-    def _insert_fs_resource(self):
-        return fs_api.insert_resource(Xspress3HDF5Handler.HANDLER_NAME,
-                                      self.store_filename, {})
+    def __init__(self, prefix, *, channel=None, **kwargs):
+        self.channel = channel
 
-    @property
-    def store_filename(self):
-        return self._store_filename
-
-    @property
-    def ioc_filename(self):
-        return self._ioc_filename
+        super().__init__(prefix, **kwargs)
 
 
 class Xspress3Detector(AreaDetector):
-    '''Quantum Detectors Xspress3 detector'''
+    cam = C(Xspress3DetectorCam, '')
+    # hdf5 = C(Xspress3HDFPlugin, '')
+    channel1 = C(Xspress3Channel, 'C1_', channel=1)
+    channel2 = C(Xspress3Channel, 'C2_', channel=2)
+    channel3 = C(Xspress3Channel, 'C3_', channel=3)
+    channel4 = C(Xspress3Channel, 'C4_', channel=4)
 
-    _html_docs = ['']
-    xs_config_path = ADSignal('CONFIG_PATH', has_rbv=True)
-    xs_config_save_path = ADSignal('CONFIG_SAVE_PATH', has_rbv=True)
-    xs_connect = ADSignal('CONNECT')
-    xs_connected = ADSignal('CONNECTED')
-    xs_ctrl_dtc = ADSignal('CTRL_DTC', has_rbv=True)
-    xs_ctrl_mca_roi = ADSignal('CTRL_MCA_ROI', has_rbv=True)
-    xs_debounce = ADSignal('DEBOUNCE', has_rbv=True)
-    xs_disconnect = ADSignal('DISCONNECT')
-    xs_erase = ADSignal('ERASE')
-    xs_erase_array_counters = ADSignal('ERASE_ArrayCounters')
-    xs_erase_attr_reset = ADSignal('ERASE_AttrReset')
-    xs_erase_proc_reset_filter = ADSignal('ERASE_PROC_ResetFilter')
-    xs_frame_count = ADSignal('FRAME_COUNT_RBV', rw=False)
-    xs_hdf_capture = ADSignal('HDF5:Capture_RBV', rw=False)
-    xs_hdf_num_capture_calc = ADSignal('HDF5:NumCapture_CALC')
-    xs_invert_f0 = ADSignal('INVERT_F0', has_rbv=True)
-    xs_invert_veto = ADSignal('INVERT_VETO', has_rbv=True)
-    xs_max_frames = ADSignal('MAX_FRAMES_RBV', rw=False)
-    xs_max_frames_driver = ADSignal('MAX_FRAMES_DRIVER_RBV', rw=False)
-    xs_max_num_channels = ADSignal('MAX_NUM_CHANNELS_RBV', rw=False)
-    xs_max_spectra = ADSignal('MAX_SPECTRA', has_rbv=True)
-    xs_name = ADSignal('NAME')
-    xs_num_cards = ADSignal('NUM_CARDS_RBV', rw=False)
-    xs_num_channels = ADSignal('NUM_CHANNELS', has_rbv=True)
-    xs_num_frames_config = ADSignal('NUM_FRAMES_CONFIG', has_rbv=True)
-    xs_reset = ADSignal('RESET')
-    xs_restore_settings = ADSignal('RESTORE_SETTINGS')
-    xs_run_flags = ADSignal('RUN_FLAGS', has_rbv=True)
-    xs_save_settings = ADSignal('SAVE_SETTINGS')
-    xs_trigger = ADSignal('TRIGGER')
-    xs_update = ADSignal('UPDATE')
-    xs_update_attr = ADSignal('UPDATE_AttrUpdate')
-
-    def __init__(self, prefix, file_path='', ioc_file_path='',
-                 default_channels=None, num_roi=16, num_channels=8,
-                 channel_prefix=None, roi_sums=False,
+    def __init__(self, prefix, *, read_attrs=None, configuration_attrs=None,
+                 monitor_attrs=None, name=None, parent=None,
+                 # to remove?
+                 file_path='', ioc_file_path='', default_channels=None,
+                 num_roi=16, num_channels=8, channel_prefix=None,
+                 roi_sums=False,
+                 # to remove?
                  **kwargs):
-        AreaDetector.__init__(self, prefix, **kwargs)
+
+        if read_attrs is None:
+            read_attrs = []
+
+        if configuration_attrs is None:
+            configuration_attrs = []
+
+        super().__init__(prefix, read_attrs=read_attrs,
+                         configuration_attrs=configuration_attrs,
+                         monitor_attrs=monitor_attrs,
+                         name=name, parent=parent, **kwargs)
 
         if default_channels is None:
             default_channels = [1, 2, 3]
@@ -277,19 +432,15 @@ class Xspress3Detector(AreaDetector):
         self.rois = Xspress3Rois(self, channel_prefix=channel_prefix,
                                  use_sums=roi_sums)
 
-        self.filestore = Xspress3FileStore(self, self._base_prefix,
-                                           stats=[], shutter=None,
-                                           file_path=file_path,
-                                           ioc_file_path=ioc_file_path,
-                                           name=self.name)
+        # self.filestore = Xspress3FileStore(self, self._base_prefix,
+        #                                    stats=[], shutter=None,
+        #                                    file_path=file_path,
+        #                                    ioc_file_path=ioc_file_path,
+        #                                    name=self.name)
 
     @property
     def filestore_id(self):
         return self.filestore._filestore_res
-
-    @property
-    def prefix(self):
-        return self._prefix
 
 
 def ev_to_bin(ev):
@@ -325,107 +476,6 @@ class ROISnapshot(_roi_tuple):
                                                ev_high, bin_low, bin_high,
                                                data, epics_roi)
 
-
-class EpicsROI(ADBase, Detector):
-    '''A configurable Xspress3 EPICS ROI'''
-
-    array = ADSignal('C{self.channel}_ROI{self.roi_num}:ArrayData_RBV',
-                     rw=False)
-    value = ADSignal('C{self.channel}_ROI{self.roi_num}:Value_RBV', rw=False)
-    value_sum = ADSignal('C{self.channel}_ROI{self.roi_num}:ValueSum_RBV',
-                         rw=False)
-    bin_low = ADSignal('C{self.channel}_MCA_ROI{self.roi_num}_LLM')
-    bin_high = ADSignal('C{self.channel}_MCA_ROI{self.roi_num}_HLM')
-    enabled = ADSignal('C{self.channel}_ROI{self.roi_num}:EnableCallbacks',
-                       has_rbv=True)
-    vis_enabled = ADSignal('C{self.channel}_PluginControlVal', rw=True)
-
-    def __init__(self, prefix, channel, roi_num, use_sum=False, **kwargs):
-        super(EpicsROI, self).__init__(prefix, **kwargs)
-        self._channel = channel
-        self._roi_num = roi_num
-        self._use_sum = use_sum
-
-    @property
-    def channel(self):
-        return self._channel
-
-    @property
-    def roi_num(self):
-        return self._roi_num
-
-    @property
-    def prefix(self):
-        return self._prefix
-
-    @property
-    def ev_low(self):
-        return bin_to_ev(self.bin_low.value)
-
-    @ev_low.setter
-    def ev_low(self, ev):
-        self.bin_low.value = ev_to_bin(ev)
-
-    @property
-    def ev_high(self):
-        return bin_to_ev(self.bin_high.value)
-
-    @ev_high.setter
-    def ev_high(self, ev):
-        self.bin_high.value = ev_to_bin(ev)
-
-    def clear(self):
-        if self.bin_low.value == self.bin_high.value == 0:
-            return
-
-        self.bin_low.put(0)
-        self.bin_high.put(0)
-        self.enabled.put(0)
-
-    def set_roi(self, low, high, units='ev'):
-        if units == 'ev':
-            low = ev_to_bin(low)
-            high = ev_to_bin(high)
-        elif units == 'bin':
-            low = int(low)
-            high = int(high)
-        else:
-            raise ValueError('Unknown units. Expected either "ev" or "bin"')
-
-        enable = 1 if high > low else 0
-        changed = any([self.bin_high.value != high,
-                       self.bin_low.value != low,
-                       self.enabled.value != enable])
-
-        if changed:
-            logger.debug('Setting up EPICS ROI: name=%s bins=(%s, %s) '
-                         'enable=%s prefix=%s channel=%s',
-                         self.name, low, high, enable, self._prefix,
-                         self._channel)
-            if high <= self.bin_low.value:
-                self.bin_low.put(0)
-
-            self.bin_high.put(high)
-            self.bin_low.put(low)
-            self.enabled.put(enable)
-
-    @property
-    def _read_signal(self):
-        '''The signal which is read for data acquisition'''
-        if self._use_sum:
-            return self.value_sum
-        return self.value
-
-    def read(self):
-        return {self.name: dict(value=self._read_signal.get(),
-                                timestamp=time.time())}
-
-    def describe(self):
-        source = 'PV:{}'.format(self._read_signal.pvname)
-        return {self.name: dict(dtype='number', shape=[],
-                                source=source)}
-
-
 class Xspress3Rois(object):
     '''Xspress3 ROI configuration
 
@@ -454,7 +504,7 @@ class Xspress3Rois(object):
 
         warned = False
         det = self._det
-        num_points = det.num_images.value
+        num_points = det.num_images.get()
         retry = 0
         while retry < max_retries:
             retry += 1
