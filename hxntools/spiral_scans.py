@@ -3,7 +3,7 @@ import logging
 import numpy as np
 
 from bluesky.run_engine import Msg
-from bluesky import (scans, simple_scans)
+from bluesky import (plans, simple_scans)
 from bluesky.simple_scans import (_BundledScan, _set_acquire_time,
                                   _unset_acquire_time)
 from bluesky.utils import DefaultSubs
@@ -16,7 +16,7 @@ from cycler import cycler
 logger = logging.getLogger(__name__)
 
 
-class MultipleMotorPlan(scans.ScanND):
+class MultipleMotorPlan(plans.PlanND):
     """Scan over multi-motor trajectory
 
     Parameters
@@ -200,7 +200,7 @@ class HxnFermatScan(_BundledScan):
     default_sub_factories = DefaultSubs({'all': [simple_scans.table_from_motors,
                                                  simple_scans.plot_first_motor]}
                                         )
-    scan_class = HxnFermatPlan
+    plan_class = HxnFermatPlan
 
     def __call__(self, motor1, motor2, x_range, y_range, dr, factor, time=None,
                  **kwargs):

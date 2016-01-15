@@ -2,7 +2,7 @@ import logging
 
 from boltons.iterutils import chunked
 from bluesky.run_engine import Msg
-from bluesky import (scans, simple_scans)
+from bluesky import (plans, simple_scans)
 from bluesky.standard_config import gs
 from ophyd.controls import EpicsSignal
 from ophyd.controls.positioner import Positioner
@@ -65,19 +65,19 @@ class HxnScanMixin1D:
         yield from super()._pre_scan()
 
 
-class HxnAbsScan(HxnScanMixin1D, scans.AbsScan):
+class HxnAbsScan(HxnScanMixin1D, plans.AbsScanPlan):
     pass
 
 
-class HxnDeltaScan(HxnScanMixin1D, scans.DeltaScan):
+class HxnDeltaScan(HxnScanMixin1D, plans.DeltaScanPlan):
     pass
 
 
-class HxnInnerAbsScan(HxnScanMixin1D, scans.InnerProductAbsScan):
+class HxnInnerAbsScan(HxnScanMixin1D, plans.InnerProductAbsScanPlan):
     pass
 
 
-class HxnInnerDeltaScan(HxnScanMixin1D, scans.InnerProductDeltaScan):
+class HxnInnerDeltaScan(HxnScanMixin1D, plans.InnerProductDeltaScanPlan):
     pass
 
 
@@ -98,13 +98,13 @@ class HxnScanMixinOuter:
         yield from super()._pre_scan()
 
 
-class HxnOuterAbsScan(HxnScanMixinOuter, scans.OuterProductAbsScan):
+class HxnOuterAbsScan(HxnScanMixinOuter, plans.OuterProductAbsScanPlan):
     pass
 
 
 def setup():
-    simple_scans.AbsScan.scan_class = HxnAbsScan
-    simple_scans.DeltaScan.scan_class = HxnDeltaScan
-    simple_scans.InnerProductAbsScan.scan_class = HxnInnerAbsScan
-    simple_scans.InnerProductDeltaScan.scan_class = HxnInnerDeltaScan
-    simple_scans.OuterProductAbsScan.scan_class = HxnOuterAbsScan
+    simple_scans.AbsScan.plan_class = HxnAbsScan
+    simple_scans.DeltaScan.plan_class = HxnDeltaScan
+    simple_scans.InnerProductAbsScan.plan_class = HxnInnerAbsScan
+    simple_scans.InnerProductDeltaScan.plan_class = HxnInnerDeltaScan
+    simple_scans.OuterProductAbsScan.plan_class = HxnOuterAbsScan
