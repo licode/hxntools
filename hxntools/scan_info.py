@@ -56,14 +56,19 @@ def get_scan_info(header):
     range_ = None
     pyramid = False
     motor_keys = None
+    exposure_time = 0.0
     dimensions = []
 
     if scan_type in fly_scans:
-        logger.debug('Scan %s (%s) is a fly scan (%s)', start_doc.scan_id,
-                     start_doc.uid, scan_type)
         dimensions = start_doc['dimensions']
         motors = start_doc['axes']
         pyramid = start_doc['fly_type'] == 'pyramid'
+        exposure_time = float(scan_args.get('exposure_time', 0.0))
+
+        logger.debug('Scan %s (%s) is a fly-scan (%s) of axes %s '
+                     'with per-frame exposure time of %.3f s',
+                     start_doc.scan_id, start_doc.uid, scan_type,
+                     motors, exposure_time)
         try:
             range_ = start_doc['scan_range']
         except KeyError:
@@ -87,6 +92,7 @@ def get_scan_info(header):
         except Exception:
             motors = []
 
+        exposure_time = float(start_doc.get('exposure_time', 0.0))
         try:
             dimensions = args[3::5]
             range0 = args[1::5]
@@ -99,9 +105,11 @@ def get_scan_info(header):
     elif scan_type in fermat_scans:
         motor_keys = ['x_motor', 'y_motor']
         dimensions = [int(start_doc['num'])]
-        logger.debug('Scan %s (%s) is a fermat scan (%s) %d points',
+        exposure_time = float(scan_args.get('exposure_time', 0.0))
+        logger.debug('Scan %s (%s) is a fermat scan (%s) %d points, '
+                     'with per-point exposure time of %.3f s',
                      start_doc.scan_id, start_doc.uid, scan_type,
-                     dimensions[0])
+                     dimensions[0], exposure_time)
         try:
             range_ = [(float(start_doc['x_range']),
                        float(start_doc['y_range']))]
@@ -111,6 +119,7 @@ def get_scan_info(header):
     elif scan_type in step_1d or 'num' in start_doc:
         logger.debug('Scan %s (%s) is a 1D scan (%s)', start_doc.scan_id,
                      start_doc.uid, scan_type)
+        exposure_time = float(start_doc.get('exposure_time', 0.0))
         # 1D scans
         try:
             dimensions = [int(start_doc['num'])]
@@ -138,6 +147,7 @@ def get_scan_info(header):
     info['motors'] = motors
     info['range'] = range_
     info['pyramid'] = pyramid
+    info['exposure_time'] = exposure_time
     return info
 
 

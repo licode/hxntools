@@ -149,10 +149,11 @@ class HxnFermatPlan(HxnScanMixin1D, MultipleMotorDeltaPlan):
     >>> RE(my_plan)
     """
     _fields = MultipleMotorPlan._fields + ['x_motor', 'y_motor', 'x_range',
-                                           'y_range', 'dr', 'factor']
+                                           'y_range', 'dr', 'factor',
+                                           'exposure_time']
 
-    def __init__(self, detectors, x_motor, y_motor, x_range, y_range, dr, factor,
-                 **kwargs):
+    def __init__(self, detectors, x_motor, y_motor, x_range, y_range, dr,
+                 factor, time, **kwargs):
 
         motors = [x_motor, y_motor]
         point_args = [x_range, y_range, dr, factor]
@@ -165,6 +166,7 @@ class HxnFermatPlan(HxnScanMixin1D, MultipleMotorDeltaPlan):
         self.y_range = y_range
         self.dr = dr
         self.factor = factor
+        self.exposure_time = time
 
     def get_points(self, x_range, y_range, dr, factor):
         return spiral_fermat(x_range, y_range, dr, factor)
@@ -206,6 +208,6 @@ class HxnFermatScan(_BundledScan):
                  **kwargs):
         original_times = _set_acquire_time(time)
         result = super().__call__(motor1, motor2, x_range, y_range, dr, factor,
-                                  **kwargs)
+                                  time, **kwargs)
         _unset_acquire_time(original_times)
         return result
