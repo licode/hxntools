@@ -66,12 +66,8 @@ class Xspress3HDF5Handler(HandlerBase):
         self._get_dataset()
         return self._dataset[frame, channel - 1, :].squeeze()
 
-    def get_roi(self, roi_info, frame=None, max_points=None):
+    def get_roi(self, chan, bin_low, bin_high, *, frame=None, max_points=None):
         self._get_dataset()
-
-        chan = roi_info.chan
-        bin_low = roi_info.bin_low
-        bin_high = roi_info.bin_high
 
         roi = np.sum(self._dataset[:, chan - 1, bin_low:bin_high], axis=1)
         if max_points is not None:

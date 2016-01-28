@@ -327,6 +327,8 @@ class Xspress3ROI(Device):
     value = C(EpicsSignalRO, 'Value_RBV')
     value_sum = C(EpicsSignalRO, 'ValueSum_RBV')
 
+    # enable = C(SignalWithRBV, 'Enable')
+
     # ad_plugin = C(PluginBase, '')
 
     def __init__(self, prefix, *, roi_num=0, use_sum=False,
@@ -340,7 +342,7 @@ class Xspress3ROI(Device):
                 read_attrs = ['value', 'value_sum']
 
         if configuration_attrs is None:
-            configuration_attrs = ['ev_low', 'ev_high']
+            configuration_attrs = ['ev_low', 'ev_high', 'enable']
 
         channel = parent.parent
         self._channel = channel
@@ -371,9 +373,8 @@ class Xspress3ROI(Device):
         return self._roi_num
 
     def clear(self):
-        self.bin_low.put(0)
-        self.bin_high.put(0)
-        self.enable.put(0)
+        '''Clear and disable this ROI'''
+        self.configure(0, 0)
 
     def configure(self, ev_low, ev_high):
         '''Configure the ROI with low and high eV
@@ -433,12 +434,22 @@ def make_rois(rois):
         defn[attr] = (Xspress3ROI, 'ROI{}:'.format(roi), dict(roi_num=roi))
         # e.g., device.rois.roi01 = Xspress3ROI('ROI1:', roi_num=1)
 
+        # AreaDetector NDPluginAttribute information
+        attr = 'ad_attr{:02d}'.format(roi)
+        defn[attr] = (PluginBase, 'ROI{}:'.format(roi), {})
+        # e.g., device.rois.roi01 = Xspress3ROI('ROI1:', roi_num=1)
+
+        # TODO: 'roi01' and 'ad_attr_01' have the same prefix and could
+        # technically be combined. Is this desirable?
+
     defn['num_rois'] = (Signal, None, dict(value=len(rois)))
     # e.g., device.rois.num_rois.get() => 16
     return defn
 
 
 class Xspress3Channel(Device):
+    roi_name_format = 'Det{self.channel_num}_{roi_name}'
+
     rois = DDC(make_rois(range(1, 17)))
     vis_enabled = C(EpicsSignal, 'PluginControlVal')
 
@@ -446,6 +457,41 @@ class Xspress3Channel(Device):
         self.channel_num = int(channel_num)
 
         super().__init__(prefix, **kwargs)
+
+    @property
+    def all_rois(self):
+        for roi in range(1, self.rois.num_rois.get() + 1):
+            yield getattr(self.rois, 'roi{:02d}'.format(roi))
+
+    def set_roi(self, index, ev_low, ev_high, *, name=None):
+        '''Set specified ROI to (ev_low, ev_high)
+
+        Parameters
+        ----------
+        index : int or Xspress3ROI
+            The roi index or instance to set
+        ev_low : int
+            low eV setting
+        ev_high : int
+            high eV setting
+        name : str, optional
+            The unformatted ROI name to set. Each channel specifies its own
+                channel.roi_name_format = 'Det{self.channel_num}_{roi_name}'
+            in which the name parameter will get expanded.
+        '''
+        if isinstance(index, Xspress3ROI):
+            roi = index
+        else:
+            roi = list(self.all_rois)[index]
+
+        roi.configure(ev_low, ev_high)
+        if name is not None:
+            roi.name = self.roi_name_format.format(self=self, roi_name=name)
+
+    def clear_all_rois(self):
+        '''Clear all ROIs'''
+        for roi in self.all_rois:
+            roi.clear()
 
 
 class Xspress3Detector(AreaDetector):
@@ -494,13 +540,18 @@ class Xspress3Detector(AreaDetector):
                          monitor_attrs=monitor_attrs,
                          name=name, parent=parent, **kwargs)
 
-        if default_channels is None:
-            default_channels = [1, 2, 3]
+        # get all sub-device instances
+        sub_devices = {attr: getattr(self, attr)
+                       for attr in self._sub_devices}
 
-        self.default_channels = list(default_channels)
-        # self.num_channels = int(num_channels)
-        # self.rois = Xspress3Rois(self, channel_prefix=channel_prefix,
-        #                          use_sums=roi_sums)
+        # filter those sub-devices, just giving channels
+        channels = {dev.channel_num: dev
+                    for attr, dev in sub_devices.items()
+                    if isinstance(dev, Xspress3Channel)
+                    }
+
+        # make an ordered dictionary with the channels in order
+        self._channels = OrderedDict(sorted(channels.items()))
 
         # self.filestore = Xspress3FileStore(self, self._base_prefix,
         #                                    stats=[], shutter=None,
@@ -508,206 +559,88 @@ class Xspress3Detector(AreaDetector):
         #                                    ioc_file_path=ioc_file_path,
         #                                    name=self.name)
 
+    @property
+    def channels(self):
+        return self._channels.copy()
 
+    @property
+    def all_rois(self):
+        for ch_num, channel in self._channels.items():
+            for roi in channel.all_rois:
+                yield roi
 
-class Xspress3Rois(object):
-    '''Xspress3 ROI configuration
+    @property
+    def enabled_rois(self):
+        for roi in self.all_rois:
+            if roi.enable.get():
+                yield roi
 
-    .. note:: Can optionally configure more than the EPICS IOC supports
-    '''
-    def __init__(self, det, channel_prefix=None, limit_rois=False,
-                 name_format='{self.channel_prefix}{channel}_{name}',
-                 use_sums=False):
-        self._det = det
-        self._roi_config = {}
-        self.channel_prefix = channel_prefix
-        self.name_format = name_format
-        self.num_roi = det.num_roi
-        self.num_channels = det.num_channels
-        self.limit_rois = limit_rois
-        self.use_sums = use_sums
-
-    def read_hdf5(self, fn, rois=None, wait=True, max_retries=2,
-                  data_key=XRF_DATA_KEY):
-        '''Read ROIs from an hdf5 file'''
-
-        if rois is None:
-            rois = [roi for nchan, chan in sorted(self._roi_config.items())
-                    for nroi, roi in sorted(chan.items())
-                    ]
-
-        warned = False
+    def open_hdf5_wait(self, fn, *, max_retries=2, try_stop=False):
+        '''Wait for the HDF5 file specified to be closed'''
         det = self._det
-        num_points = det.num_images.get()
+        warned = False
         retry = 0
         while retry < max_retries:
             retry += 1
             try:
-                try:
-                    hdf = h5py.File(fn, 'r')
-                except (IOError, OSError):
-                    if not warned:
-                        logger.error('Xspress3 hdf5 file still open; press '
-                                     'Ctrl-C to cancel')
-                        warned = True
+                return h5py.File(fn, 'r')
+            except (IOError, OSError):
+                if not warned:
+                    logger.error('Xspress3 hdf5 file still open; press '
+                                 'Ctrl-C to cancel')
+                    warned = True
 
+                if try_stop:
                     time.sleep(2.0)
                     det.hdf5.capture.put(0)
                     det.acquire.put(0)
-                    if not wait:
-                        raise RuntimeError('Unable to open HDF5 file; retry '
-                                           'disabled')
-
-                else:
-                    if warned:
-                        logger.info('Xspress3 hdf5 file opened')
-                    break
             except KeyboardInterrupt:
                 raise RuntimeError('Unable to open HDF5 file; interrupted '
                                    'by Ctrl-C')
+            else:
+                if warned:
+                    logger.info('Xspress3 hdf5 file opened')
+                break
 
         if retry >= max_retries:
             raise RuntimeError('Unable to open HDF5 file; exceeded maximum '
                                'retries')
-        else:
-            handler = Xspress3HDF5Handler(hdf, key=data_key)
-            for roi_info in sorted(rois, key=lambda x: x.name):
-                roi_data = handler.get_roi(roi_info, max_points=num_points)
-                yield ROISnapshot(chan=roi_info.chan, ev_low=roi_info.ev_low,
-                                  ev_high=roi_info.ev_high, name=roi_info.name,
-                                  data=roi_data)
 
-    def get_roi_name(self, channel, suffix):
-        '''Format an ROI name according to the channel prefix'''
-        if self.name_format is not None:
-            return self.name_format.format(self=self, channel=channel,
-                                           name=suffix)
-        else:
-            return suffix
-
-    def set(self, channel, roi, ev_low, ev_high, name=None):
-        '''Configure an ROI on a specific channel'''
-        if channel not in self._roi_config:
-            self._roi_config[channel] = {}
-
-        epics_roi = None
-
-        ev_low = int(ev_low)
-        ev_high = int(ev_high)
-
-        if ev_low == ev_high == 0:
-            try:
-                epics_roi = self._roi_config[channel][roi].epics_roi
-                del self._roi_config[channel][roi]
-            except KeyError:
-                return
-
-            if epics_roi is not None:
-                epics_roi.clear()
-        else:
-            if roi <= self.num_roi:
-                epics_roi = EpicsROI(self._det.prefix, channel, roi, name=name,
-                                     use_sum=self.use_sums)
-            else:
-                if self.limit_rois:
-                    raise ValueError('Cannot add more ROIs than the EPICS layer '
-                                     'supports (limit_rois is enabled)')
-
-                logger.warning('ROI {} will be recorded in fly scans but will '
-                               'not be available for live preview (num_roi={})'
-                               ''.format(name, self.num_roi))
-
-            if epics_roi is not None:
-                epics_roi.configure(ev_low, ev_high)
-
-            info = ROISnapshot(chan=channel, ev_low=ev_low, ev_high=ev_high,
-                               name=name, epics_roi=epics_roi)
-            self._roi_config[channel][roi] = info
-
-    @property
-    def rois(self):
-        '''All configured ROIs'''
-
-        for chan, chan_rois in self._roi_config.items():
-            for roi_num, roi in chan_rois.items():
-                yield roi
-
-    def get_epics_rois(self, channels=None, names=None, full_names=None):
-        '''Get the EPICS ROIs which can be used in data collection
+    def read_hdf5(self, fn, *, rois=None, wait=True, max_retries=2,
+                  data_key=XRF_DATA_KEY):
+        '''Read ROI data from an HDF5 file using the current ROI configuration
 
         Parameters
         ----------
-        channels : list, optional
-            A list of channels to match
-        full_names : list, optional
-            A list of full names to match, e.g., ['Det1_Si']
-        names : list, optional
-            A list of partial names to match, e.g., ['Si'] would match
-            Det1_Si, Det2_Si, and so on.
+        fn : str
+            HDF5 filename to load
+        rois : sequence of Xspress3ROI instances, optional
+
         '''
-        for roi in self.rois:
-            if channels is not None and roi.chan not in channels:
-                continue
+        if rois is None:
+            rois = self.enabled_rois
 
-            if full_names is not None and roi.name not in full_names:
-                continue
+        num_points = self.cam.num_images.get()
+        if not wait:
+            max_retries = 1
 
-            if names is not None:
-                found = False
-                for name in names:
-                    if roi.name.endswith(name):
-                        found = True
-                        break
+        hdf = self.open_hdf5_wait(fn, max_retries=max_retries,
+                                  try_stop=False)
 
-                if not found:
-                    continue
+        RoiTuple = Xspress3ROI.get_device_tuple()
 
-            if roi.epics_roi is not None:
-                yield roi.epics_roi
+        handler = Xspress3HDF5Handler(hdf, key=data_key)
+        for roi in self.enabled_rois:
+            roi_data = handler.get_roi(chan=roi.channel_num,
+                                       bin_low=roi.bin_low.get(),
+                                       bin_high=roi.bin_high.get(),
+                                       max_points=num_points)
 
-    def clear(self, channel, roi):
-        '''Clear ROI from a specific channel by index'''
-        return self.set(channel, roi, 0, 0)
+            roi_info = RoiTuple(bin_low=roi.bin_low.get(),
+                                bin_high=roi.bin_high.get(),
+                                ev_low=roi.ev_low.get(),
+                                ev_high=roi.ev_high.get(),
+                                value=roi_data,
+                                value_sum=None)
 
-    def clear_all(self, channels=None):
-        '''Clear all ROIs on the specified channels
-
-        If no channels are specified, all will be cleared.
-        '''
-
-        if channels is None:
-            channels = self._roi_config.keys()
-
-        for channel in channels:
-            chan_rois = self._roi_config[channel]
-            for roi_num in list(chan_rois.keys()):
-                roi = chan_rois[roi_num]
-                if roi.epics_roi is not None:
-                    roi.epics_roi.clear()
-
-            chan_rois.clear()
-
-    def add(self, ev_low, ev_high, name, channels=None):
-        '''Add an ROI from ev_low to ev_high on the given channels
-
-        If a channel prefix is set, each roi name will be formatted
-        accordingly.
-        '''
-        if channels is None:
-            channels = self._det.default_channels
-
-        for channel in channels:
-            roi_num = 1
-            while True:
-                if self.limit_rois and roi_num > self.num_roi:
-                    raise ValueError('Cannot add more ROIs than the EPICS '
-                                     'layer supports (limit_rois is enabled)')
-
-                try:
-                    self._roi_config[channel][roi_num]
-                except KeyError:
-                    self.set(channel, roi_num, ev_low, ev_high,
-                             name=self.get_roi_name(channel, name))
-                    break
-
-                roi_num += 1
+            yield roi.name, roi_info
