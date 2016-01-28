@@ -10,13 +10,14 @@ import h5py
 import filestore.api as fs_api
 from filestore.commands import bulk_insert_datum
 
-from ophyd.areadetector import AreaDetector
-from ophyd.areadetector import CamBase
-from ophyd.areadetector import (EpicsSignalWithRBV as SignalWithRBV)
+from ophyd.areadetector import (AreaDetector, CamBase, ADBase,
+                                EpicsSignalWithRBV as SignalWithRBV)
+from ophyd import (Signal, EpicsSignal, EpicsSignalRO)
+
 # from ophyd.area_detector import AreaDetectorFileStore
-from ophyd.device import (DeviceStatus,
-                          Component as C,
-                          DynamicDeviceComponent as DDC)
+from ophyd import (Device, Component as C, FormattedComponent as FC,
+                   DynamicDeviceComponent as DDC)
+from ophyd.areadetector.plugins import PluginBase
 
 from .utils import makedirs
 
@@ -193,7 +194,8 @@ logger = logging.getLogger(__name__)
 #         return status
 #
 #     def describe(self):
-#         # TODO: describe is called prior to configure, so the filestore resource
+#         # TODO: describe is called prior to configure, so the filestore
+#         #       resource
 #         #       is not yet generated
 #         size = (self._det.hdf5.width.value, )
 #
@@ -263,12 +265,63 @@ class Xspress3DetectorCam(CamBase):
     xs_update_attr = C(EpicsSignal, 'UPDATE_AttrUpdate')
 
 
-class Xspress3Roi(Device):
+def ev_to_bin(ev):
+    '''Convert eV to bin number'''
+    return int(ev / 10)
+
+
+def bin_to_ev(bin_):
+    '''Convert bin number to eV'''
+    return int(bin_) * 10
+
+
+class DerivedSignal(Signal):
+    '''A signal which is derived from another one'''
+    def __init__(self, derived_from, **kwargs):
+        self._derived_from = derived_from
+        super().__init__(**kwargs)
+
+    def describe(self):
+        desc = self._derived_from.describe()[self._derived_from.name]
+        return {self.name: desc}
+
+    def get(self, **kwargs):
+        return self._derived_from.get(**kwargs)
+
+    def put(self, value, **kwargs):
+        return self._derived_from.put(value, **kwargs)
+
+
+class EvSignal(DerivedSignal):
+    '''A signal that converts a bin number into electron volts'''
+    def __init__(self, parent_attr, *, parent=None, **kwargs):
+        bin_signal = getattr(parent, parent_attr)
+        super().__init__(derived_from=bin_signal, parent=parent, **kwargs)
+
+    def get(self, **kwargs):
+        bin_ = super().get(**kwargs)
+        return bin_to_ev(bin_)
+
+    def put(self, ev_value, **kwargs):
+        bin_value = ev_to_bin(ev_value)
+        return super().put(bin_value, **kwargs)
+
+    def describe(self):
+        desc = super().describe()
+        desc[self.name]['units'] = 'eV'
+        return desc
+
+
+class Xspress3ROI(PluginBase):
     '''A configurable Xspress3 EPICS ROI'''
 
     # prefix: C{channel}_   MCA_ROI{self.roi_num}
     bin_low = FC(SignalWithRBV, '{self.channel.prefix}{self.bin_suffix}_LLM')
     bin_high = FC(SignalWithRBV, '{self.channel.prefix}{self.bin_suffix}_HLM')
+
+    # derived from the bin signals, low and high electron volt settings:
+    ev_low = C(EvSignal, parent_attr='bin_low')
+    ev_high = C(EvSignal, parent_attr='bin_high')
 
     # C{channel}_  ROI{self.roi_num}
     value = C(EpicsSignalRO, 'Value_RBV')
@@ -285,7 +338,7 @@ class Xspress3Roi(Device):
                 read_attrs = ['value']
 
         if configuration_attrs is None:
-            configuration_attrs = ['bin_low', 'bin_high']
+            configuration_attrs = ['ev_low', 'ev_high']
 
         channel = parent.parent
         self._channel = channel
@@ -308,26 +361,7 @@ class Xspress3Roi(Device):
     def roi_num(self):
         return self._roi_num
 
-    @property
-    def ev_low(self):
-        return bin_to_ev(self.bin_low.value)
-
-    @ev_low.setter
-    def ev_low(self, ev):
-        self.bin_low.value = ev_to_bin(ev)
-
-    @property
-    def ev_high(self):
-        return bin_to_ev(self.bin_high.value)
-
-    @ev_high.setter
-    def ev_high(self, ev):
-        self.bin_high.value = ev_to_bin(ev)
-
     def clear(self):
-        if self.bin_low.value == self.bin_high.value == 0:
-            return
-
         self.bin_low.put(0)
         self.bin_high.put(0)
         self.enable.put(0)
@@ -380,12 +414,14 @@ def make_rois(rois):
     defn = OrderedDict()
     for roi in rois:
         attr = 'roi{:02d}'.format(roi)
+        #             cls          prefix                kwargs
         defn[attr] = (Xspress3ROI, 'ROI{}:'.format(roi), dict(roi_num=roi))
 
     return defn
 
 
 class Xspress3Channel(Device):
+    num_roi = 16
     rois = DDC(make_rois(range(1, 17)))
     vis_enabled = C(EpicsSignal, 'PluginControlVal')
 
@@ -407,16 +443,32 @@ class Xspress3Detector(AreaDetector):
                  monitor_attrs=None, name=None, parent=None,
                  # to remove?
                  file_path='', ioc_file_path='', default_channels=None,
-                 num_roi=16, num_channels=8, channel_prefix=None,
+                 channel_prefix=None,
                  roi_sums=False,
                  # to remove?
                  **kwargs):
 
         if read_attrs is None:
-            read_attrs = []
+            read_attrs = ['channel1']
 
         if configuration_attrs is None:
-            configuration_attrs = []
+            configuration_attrs = ['channel1.rois',
+                                   'cam.xs_config_path',
+                                   'cam.xs_config_save_path',
+                                   'cam.xs_connected', 'cam.xs_ctrl_dtc',
+                                   'cam.xs_ctrl_mca_roi', 'cam.xs_debounce',
+                                   'cam.xs_erase', 'cam.xs_frame_count',
+                                   'cam.xs_hdf_capture',
+                                   'cam.xs_hdf_num_capture_calc',
+                                   'cam.xs_invert_f0', 'cam.xs_invert_veto',
+                                   'cam.xs_max_frames',
+                                   'cam.xs_max_frames_driver',
+                                   'cam.xs_max_num_channels',
+                                   'cam.xs_max_spectra', 'cam.xs_name',
+                                   'cam.xs_num_cards', 'cam.xs_num_channels',
+                                   'cam.xs_num_frames_config', 'cam.xs_reset',
+                                   'cam.xs_restore_settings',
+                                   'cam.xs_run_flags', 'cam.xs_save_settings']
 
         super().__init__(prefix, read_attrs=read_attrs,
                          configuration_attrs=configuration_attrs,
@@ -427,10 +479,9 @@ class Xspress3Detector(AreaDetector):
             default_channels = [1, 2, 3]
 
         self.default_channels = list(default_channels)
-        self.num_roi = int(num_roi)
-        self.num_channels = int(num_channels)
-        self.rois = Xspress3Rois(self, channel_prefix=channel_prefix,
-                                 use_sums=roi_sums)
+        # self.num_channels = int(num_channels)
+        # self.rois = Xspress3Rois(self, channel_prefix=channel_prefix,
+        #                          use_sums=roi_sums)
 
         # self.filestore = Xspress3FileStore(self, self._base_prefix,
         #                                    stats=[], shutter=None,
@@ -438,19 +489,6 @@ class Xspress3Detector(AreaDetector):
         #                                    ioc_file_path=ioc_file_path,
         #                                    name=self.name)
 
-    @property
-    def filestore_id(self):
-        return self.filestore._filestore_res
-
-
-def ev_to_bin(ev):
-    '''Convert eV to bin number'''
-    return int(ev / 10)
-
-
-def bin_to_ev(bin_):
-    '''Convert bin number to eV'''
-    return int(bin_) * 10
 
 
 _roi_tuple = namedtuple('ROISnapshot', 'name chan ev_low ev_high bin_low '
@@ -475,6 +513,7 @@ class ROISnapshot(_roi_tuple):
         return super(ROISnapshot, cls).__new__(cls, name, chan, ev_low,
                                                ev_high, bin_low, bin_high,
                                                data, epics_roi)
+
 
 class Xspress3Rois(object):
     '''Xspress3 ROI configuration
