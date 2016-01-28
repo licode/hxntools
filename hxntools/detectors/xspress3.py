@@ -312,7 +312,7 @@ class EvSignal(DerivedSignal):
         return desc
 
 
-class Xspress3ROI(PluginBase):
+class Xspress3ROI(Device):
     '''A configurable Xspress3 EPICS ROI'''
 
     # prefix: C{channel}_   MCA_ROI{self.roi_num}
@@ -327,6 +327,8 @@ class Xspress3ROI(PluginBase):
     value = C(EpicsSignalRO, 'Value_RBV')
     value_sum = C(EpicsSignalRO, 'ValueSum_RBV')
 
+    # ad_plugin = C(PluginBase, '')
+
     def __init__(self, prefix, *, roi_num=0, use_sum=False,
                  read_attrs=None, configuration_attrs=None, parent=None,
                  bin_suffix=None, **kwargs):
@@ -335,7 +337,7 @@ class Xspress3ROI(PluginBase):
             if use_sum:
                 read_attrs = ['value_sum']
             else:
-                read_attrs = ['value']
+                read_attrs = ['value', 'value_sum']
 
         if configuration_attrs is None:
             configuration_attrs = ['ev_low', 'ev_high']
@@ -355,10 +357,17 @@ class Xspress3ROI(PluginBase):
 
     @property
     def channel(self):
+        '''The Xspress3Channel instance associated with the ROI'''
         return self._channel
 
     @property
+    def channel_num(self):
+        '''The channel number associated with the ROI'''
+        return self._channel.channel_num
+
+    @property
     def roi_num(self):
+        '''The ROI number'''
         return self._roi_num
 
     def clear(self):
@@ -366,49 +375,55 @@ class Xspress3ROI(PluginBase):
         self.bin_high.put(0)
         self.enable.put(0)
 
-    def set_roi(self, low, high, units='ev'):
-        if units == 'ev':
-            low = ev_to_bin(low)
-            high = ev_to_bin(high)
-        elif units == 'bin':
-            low = int(low)
-            high = int(high)
-        else:
-            raise ValueError('Unknown units. Expected either "ev" or "bin"')
+    def configure(self, ev_low, ev_high):
+        '''Configure the ROI with low and high eV
 
-        enable = 1 if high > low else 0
-        changed = any([self.bin_high.get() != high,
-                       self.bin_low.get() != low,
+        Parameters
+        ----------
+        ev_low : int
+            low electron volts for ROI
+        ev_high : int
+            high electron volts for ROI
+        '''
+        ev_low = int(ev_low)
+        ev_high = int(ev_high)
+
+        enable = 1 if ev_high > ev_low else 0
+        changed = any([self.ev_high.get() != ev_high,
+                       self.ev_low.get() != ev_low,
                        self.enable.get() != enable])
 
-        if changed:
-            logger.debug('Setting up EPICS ROI: name=%s bins=(%s, %s) '
-                         'enable=%s prefix=%s channel=%s',
-                         self.name, low, high, enable, self._prefix,
-                         self._channel)
-            if high <= self.bin_low.get():
-                self.bin_low.put(0)
+        if not changed:
+            return
 
-            self.bin_high.put(high)
-            self.bin_low.put(low)
-            self.enable.put(enable)
+        logger.debug('Setting up EPICS ROI: name=%s ev=(%s, %s) '
+                     'enable=%s prefix=%s channel=%s',
+                     self.name, ev_low, ev_high, enable, self._prefix,
+                     self._channel)
+        if ev_high <= self.ev_low.get():
+            self.ev_low.put(0)
 
-    @property
-    def _read_signal(self):
-        '''The signal which is read for data acquisition'''
-        if self._use_sum:
-            return self.value_sum
-        return self.value
+        self.ev_high.put(ev_high)
+        self.ev_low.put(ev_low)
+        self.enable.put(enable)
 
-    def read(self):
-        return {self.name: dict(value=self._read_signal.get(),
-                                timestamp=time.time())}
 
-    def describe(self):
-        source = 'PV:{}'.format(self._read_signal.pvname)
-        return {self.name: dict(dtype='number', shape=[],
-                                source=source)}
-
+# class Xspress3SoftROI(Device):
+#     '''An ROI beyond what can be represented on the EPICS level'''
+#     bin_low = C(Signal)
+#     bin_high = C(Signal)
+#
+#     # derived from the bin signals, low and high electron volt settings:
+#     ev_low = C(EvSignal, parent_attr='bin_low')
+#     ev_high = C(EvSignal, parent_attr='bin_high')
+#
+#     data = C(Signal)
+#
+#     def read(self):
+#         raise RuntimeError('A SoftROI cannot be used in data acquisition')
+#
+#     describe = read
+#
 
 def make_rois(rois):
     defn = OrderedDict()
@@ -416,17 +431,19 @@ def make_rois(rois):
         attr = 'roi{:02d}'.format(roi)
         #             cls          prefix                kwargs
         defn[attr] = (Xspress3ROI, 'ROI{}:'.format(roi), dict(roi_num=roi))
+        # e.g., device.rois.roi01 = Xspress3ROI('ROI1:', roi_num=1)
 
+    defn['num_rois'] = (Signal, None, dict(value=len(rois)))
+    # e.g., device.rois.num_rois.get() => 16
     return defn
 
 
 class Xspress3Channel(Device):
-    num_roi = 16
     rois = DDC(make_rois(range(1, 17)))
     vis_enabled = C(EpicsSignal, 'PluginControlVal')
 
-    def __init__(self, prefix, *, channel=None, **kwargs):
-        self.channel = channel
+    def __init__(self, prefix, *, channel_num=None, **kwargs):
+        self.channel_num = int(channel_num)
 
         super().__init__(prefix, **kwargs)
 
@@ -434,10 +451,12 @@ class Xspress3Channel(Device):
 class Xspress3Detector(AreaDetector):
     cam = C(Xspress3DetectorCam, '')
     # hdf5 = C(Xspress3HDFPlugin, '')
-    channel1 = C(Xspress3Channel, 'C1_', channel=1)
-    channel2 = C(Xspress3Channel, 'C2_', channel=2)
-    channel3 = C(Xspress3Channel, 'C3_', channel=3)
-    channel4 = C(Xspress3Channel, 'C4_', channel=4)
+
+    # XF:03IDC-ES{Xsp:1}           C1_   ...
+    channel1 = C(Xspress3Channel, 'C1_', channel_num=1)
+    channel2 = C(Xspress3Channel, 'C2_', channel_num=2)
+    channel3 = C(Xspress3Channel, 'C3_', channel_num=3)
+    channel4 = C(Xspress3Channel, 'C4_', channel_num=4)
 
     def __init__(self, prefix, *, read_attrs=None, configuration_attrs=None,
                  monitor_attrs=None, name=None, parent=None,
@@ -489,30 +508,6 @@ class Xspress3Detector(AreaDetector):
         #                                    ioc_file_path=ioc_file_path,
         #                                    name=self.name)
 
-
-
-_roi_tuple = namedtuple('ROISnapshot', 'name chan ev_low ev_high bin_low '
-                                       'bin_high data epics_roi')
-
-
-class ROISnapshot(_roi_tuple):
-    '''A non-configurable snapshot of an Xspress3 ROI'''
-
-    def __new__(cls, chan=1, ev_low=None, ev_high=None,
-                bin_low=None, bin_high=None, name='name', data=None,
-                epics_roi=None):
-        if ev_low is not None and ev_high is not None:
-            bin_low = ev_to_bin(ev_low)
-            bin_high = ev_to_bin(ev_high)
-        elif bin_low is not None and bin_high is not None:
-            ev_low = bin_to_ev(bin_low)
-            ev_high = bin_to_ev(bin_high)
-        else:
-            raise ValueError('Bin or energy must be specified')
-
-        return super(ROISnapshot, cls).__new__(cls, name, chan, ev_low,
-                                               ev_high, bin_low, bin_high,
-                                               data, epics_roi)
 
 
 class Xspress3Rois(object):
@@ -623,7 +618,7 @@ class Xspress3Rois(object):
                                ''.format(name, self.num_roi))
 
             if epics_roi is not None:
-                epics_roi.set_roi(ev_low, ev_high, units='ev')
+                epics_roi.configure(ev_low, ev_high)
 
             info = ROISnapshot(chan=channel, ev_low=ev_low, ev_high=ev_high,
                                name=name, epics_roi=epics_roi)
