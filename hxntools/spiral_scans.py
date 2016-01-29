@@ -138,6 +138,8 @@ class HxnFermatPlan(HxnScanMixin1D, MultipleMotorDeltaPlan):
         delta radius
     factor : float
         radius gets divided by this
+    time : float, optional
+        detector preset time to synchronize to
 
     Examples
     --------
