@@ -1,6 +1,7 @@
 import time
-from ophyd.areadetector.detectors import (ADBase, ADSignal)
-from ophyd.utils import TimeoutError
+from ophyd import (Device, Component as Cpt, FormattedComponent as FC)
+from ophyd import (EpicsSignal, EpicsSignalRO, DeviceStatus)
+from ophyd.utils import (set_and_wait, TimeoutError)
 
 
 anc350_dc_controllers = [2, 3, 4, 7]
@@ -16,29 +17,28 @@ anc350_axis_counts = {1: 6,
                       }
 
 
-class Anc350Axis(ADBase):
-    motor = ADSignal('Mtr', rw=True)
-    desc = ADSignal('Mtr.DESC', rw=True)
-    frequency = ADSignal('Freq-SP', rw=True)
-    frequency_rbv = ADSignal('Freq-I')
+class Anc350Axis(Device):
+    motor = Cpt(EpicsSignal, 'Mtr')
+    desc = Cpt(EpicsSignal, 'Mtr.DESC')
+    frequency = Cpt(EpicsSignal, 'Freq-SP')
+    frequency_rbv = Cpt(EpicsSignal, 'Freq-I')
 
-    amplitude = ADSignal('Ampl-SP', rw=True)
-    amplitude_rbv = ADSignal('Ampl-I')
+    amplitude = Cpt(EpicsSignal, 'Ampl-SP')
+    amplitude_rbv = Cpt(EpicsSignal, 'Ampl-I')
 
-    def __init__(self, prefix, axis_no, **kwargs):
+    def __init__(self, prefix, *, axis_num=None, **kwargs):
+        self.axis_num = int(axis_num)
         super(Anc350Axis, self).__init__(prefix, **kwargs)
 
-        self.axis_no = axis_no
 
+class Anc350Controller(Device):
+    dc_period = Cpt(EpicsSignal, 'DCPer-SP')
+    dc_off_time = Cpt(EpicsSignal, 'DCOff-SP')
+    dc_enable = Cpt(EpicsSignal, 'DC-Cmd')
 
-class Anc350Controller(ADBase):
-    dc_period = ADSignal('DCPer-SP', rw=True)
-    dc_off_time = ADSignal('DCOff-SP', rw=True)
-    dc_enable = ADSignal('DC-Cmd', rw=True)
-
-    dc_period_rbv = ADSignal('DCPer-I')
-    dc_off_time_rbv = ADSignal('DCOff-I')
-    dc_enable_rbv = ADSignal('DC-I')
+    dc_period_rbv = Cpt(EpicsSignalRO, 'DCPer-I')
+    dc_off_time_rbv = Cpt(EpicsSignalRO, 'DCOff-I')
+    dc_enable_rbv = Cpt(EpicsSignalRO, 'DC-I')
 
     def __init__(self, prefix, **kwargs):
         super(Anc350Controller, self).__init__(prefix, **kwargs)
@@ -76,15 +76,15 @@ class Anc350Controller(ADBase):
 
 
 class HxnAnc350Axis(Anc350Axis):
-    def __init__(self, controller, axis_no, **kwargs):
-        prefix = 'XF:03IDC-ES{{ANC350:{}-Ax:{}}}'.format(controller, axis_no)
-        super(HxnAnc350Axis, self).__init__(prefix, axis_no, **kwargs)
+    def __init__(self, controller, axis_num, **kwargs):
+        prefix = 'XF:03IDC-ES{{ANC350:{}-Ax:{}}}'.format(controller, axis_num)
+        super().__init__(prefix, axis_num=axis_num, **kwargs)
 
 
 class HxnAnc350Controller(Anc350Controller):
     def __init__(self, controller, **kwargs):
         prefix = 'XF:03IDC-ES{{ANC350:{}}}'.format(controller)
-        super(HxnAnc350Controller, self).__init__(prefix, **kwargs)
+        super().__init__(prefix, **kwargs)
 
         self.axes = {axis: HxnAnc350Axis(controller, axis)
                      for axis in range(anc350_axis_counts[controller])}
@@ -110,7 +110,7 @@ def _wait_tries(signal, value, tries=20, period=0.1):
 
 
 def _dc_toggle(axis, enable, freq, dc_period, off_time):
-    print('Axis {} {}: '.format(axis.axis_no, axis.desc.value), end='')
+    print('Axis {} {}: '.format(axis.axis_num, axis.desc.value), end='')
     axis.frequency.put(freq)
     _wait_tries(axis.frequency_rbv, freq)
     print('frequency={}'.format(axis.frequency_rbv.value))
@@ -139,7 +139,7 @@ def dc_toggle(enable, controllers=None, freq=100, dc_period=20, off_time=10):
             else:
                 print('Disabled duty cycling')
 
-        for axis_no, axis in sorted(controller.axes.items()):
+        for axis_num, axis in sorted(controller.axes.items()):
             print('\t', end='')
             _dc_toggle(axis, enable, freq, dc_period, off_time)
 
