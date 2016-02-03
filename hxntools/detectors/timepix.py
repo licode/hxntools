@@ -4,8 +4,12 @@ import numpy as np
 import time
 import logging
 
-from ophyd.areadetector.detectors import (AreaDetector, ADSignal)
-from ophyd.area_detector import AreaDetectorFileStoreTIFF
+from ophyd import (Device, Component as Cpt,
+                   FormattedComponent as FC,
+                   AreaDetector)
+from ophyd import (EpicsSignal, EpicsSignalRO, DeviceStatus)
+from ophyd.areadetector import (EpicsSignalWithRBV as SignalWithRBV)
+from ophyd.utils import set_and_wait
 from .utils import makedirs
 
 
@@ -24,104 +28,106 @@ if USE_TPX_RAW:
     _tpx_raw = pympx.MpxModule(0, 3, 0, pympx.MPIX_ROWS, 0, _tpx_raw_log)
 
 
-class TimepixFileStore(AreaDetectorFileStoreTIFF):
-    def __init__(self, det, basename, **kwargs):
-        super(TimepixFileStore, self).__init__(basename, cam='cam1:',
-                                               **kwargs)
-        self._det = det
+# class TimepixFileStore(AreaDetectorFileStoreTIFF):
+#     def __init__(self, det, basename, **kwargs):
+#         super(TimepixFileStore, self).__init__(basename, cam='cam1:',
+#                                                **kwargs)
+#         self._det = det
+#
+#     def _extra_AD_configuration(self):
+#         self._det.array_callbacks.put('Enable')
+#         self._det.num_images.put(1)
+#         self._det.tiff1.auto_increment.put(1)
+#         self._det.tiff1.auto_save.put(1)
+#         self._det.tiff1.num_capture.put(self._total_points)
+#         self._det.tiff1.file_write_mode.put(2)
+#         self._det.tiff1.enable.put(1)
+#         self._det.tiff1.capture.put(1)
+#
+#     def deconfigure(self):
+#         # Wait for the last frame
+#         super(TimepixFileStore, self).deconfigure()
+#
+#         self._total_points = None
+#         self._det.tiff1.capture.put(0)
+#
+#     def _make_filename(self, **kwargs):
+#         super(TimepixFileStore, self)._make_filename(**kwargs)
+#
+#         makedirs(self._store_file_path)
+#
+#     def set(self, total_points=0, **kwargs):
+#         self._total_points = total_points
 
-    def _extra_AD_configuration(self):
-        self._det.array_callbacks.put('Enable')
-        self._det.num_images.put(1)
-        self._det.tiff1.auto_increment.put(1)
-        self._det.tiff1.auto_save.put(1)
-        self._det.tiff1.num_capture.put(self._total_points)
-        self._det.tiff1.file_write_mode.put(2)
-        self._det.tiff1.enable.put(1)
-        self._det.tiff1.capture.put(1)
 
-    def deconfigure(self):
-        # Wait for the last frame
-        super(TimepixFileStore, self).deconfigure()
+class ValueAndSets(Device):
+    def __init__(self, prefix, *, read_attrs=None, **kwargs):
+        if read_attrs is None:
+            read_attrs = ['value']
 
-        self._total_points = None
-        self._det.tiff1.capture.put(0)
+        super().__init__(prefix, read_attrs=read_attrs, **kwargs)
 
-    def _make_filename(self, **kwargs):
-        super(TimepixFileStore, self)._make_filename(**kwargs)
+    def get(self, **kwargs):
+        return self.value.get(**kwargs)
 
-        makedirs(self._store_file_path)
+    def put(self, value, **kwargs):
+        if value:
+            self.set_yes.put(1, **kwargs)
+        else:
+            self.set_no.put(1, **kwargs)
 
-    def set(self, total_points=0, **kwargs):
-        self._total_points = total_points
+
+class TpxExtendedFrame(ValueAndSets):
+    value = Cpt(SignalWithRBV, 'TPX_ExtendedFrame')
+    set_no = Cpt(EpicsSignal, 'TPX_ExtendedFrameNo')
+    set_yes = Cpt(EpicsSignal, 'TPX_ExtendedFrameYes')
+
+
+class TpxSaveRaw(ValueAndSets):
+    value = Cpt(SignalWithRBV, 'TPX_SaveToFile')
+    set_no = Cpt(EpicsSignal, 'TPX_SaveToFileNo')
+    set_yes = Cpt(EpicsSignal, 'TPX_SaveToFileYes')
 
 
 class TimepixDetector(AreaDetector):
     _html_docs = []
 
-    tpx_corrections_dir = ADSignal('TPXCorrectionsDir', string=True)
-    tpx_dac = ADSignal('TPXDAC_RBV', rw=False)
-    tpx_dac_available = ADSignal('TPX_DACAvailable')
-    tpx_dac_file = ADSignal('TPX_DACFile', string=True)
-    tpx_dev_ip = ADSignal('TPX_DevIp', has_rbv=True)
-    _tpx_extended_frame = ADSignal('TPX_ExtendedFrame', has_rbv=True)
-    _tpx_extended_frame_no = ADSignal('TPX_ExtendedFrameNo')
-    _tpx_extended_frame_yes = ADSignal('TPX_ExtendedFrameYes')
+    tpx_corrections_dir = Cpt(EpicsSignal, 'TPXCorrectionsDir', string=True)
+    tpx_dac = Cpt(EpicsSignalRO, 'TPXDAC_RBV')
+    tpx_dac_available = Cpt(EpicsSignal, 'TPX_DACAvailable')
+    tpx_dac_file = Cpt(EpicsSignal, 'TPX_DACFile', string=True)
+    tpx_dev_ip = Cpt(SignalWithRBV, 'TPX_DevIp')
 
-    @property
-    def tpx_extended_frame(self):
-        return self._tpx_extended_frame
+    tpx_frame_buff_index = Cpt(EpicsSignal, 'TPXFrameBuffIndex')
+    tpx_hw_file = Cpt(EpicsSignal, 'TPX_HWFile', string=True)
+    tpx_initialize = Cpt(SignalWithRBV, 'TPX_Initialize')
+    tpx_load_dac_file = Cpt(EpicsSignal, 'TPXLoadDACFile')
+    tpx_num_frame_buffers = Cpt(SignalWithRBV, 'TPXNumFrameBuffers')
+    tpx_pix_config_file = Cpt(EpicsSignal, 'TPX_PixConfigFile', string=True)
+    tpx_reset_detector = Cpt(EpicsSignal, 'TPX_resetDetector')
 
-    @tpx_extended_frame.setter
-    def tpx_extended_frame(self, value):
-        if value:
-            self._tpx_extended_frame_yes.put(1)
-        else:
-            self._tpx_extended_frame_no.put(1)
+    tpx_raw_image_number = Cpt(EpicsSignal, 'TPXImageNumber')
+    tpx_raw_prefix = Cpt(EpicsSignal, 'TPX_DataFilePrefix', string=True)
+    tpx_raw_path = Cpt(EpicsSignal, 'TPX_DataSaveDirectory', string=True)
 
-    tpx_frame_buff_index = ADSignal('TPXFrameBuffIndex')
-    tpx_hw_file = ADSignal('TPX_HWFile', string=True)
-    tpx_initialize = ADSignal('TPX_Initialize', has_rbv=True)
-    tpx_load_dac_file = ADSignal('TPXLoadDACFile')
-    tpx_num_frame_buffers = ADSignal('TPXNumFrameBuffers', has_rbv=True)
-    tpx_pix_config_file = ADSignal('TPX_PixConfigFile', string=True)
-    tpx_reset_detector = ADSignal('TPX_resetDetector')
-
-    tpx_raw_image_number = ADSignal('TPXImageNumber')
-    tpx_raw_prefix = ADSignal('TPX_DataFilePrefix', string=True)
-    tpx_raw_path = ADSignal('TPX_DataSaveDirectory', string=True)
-
-    _tpx_save_to_file = ADSignal('TPX_SaveToFile', has_rbv=True)
-    _tpx_save_to_file_no = ADSignal('TPX_SaveToFileNo')
-    _tpx_save_to_file_yes = ADSignal('TPX_SaveToFileYes')
-
-    @property
-    def tpx_save_raw(self):
-        return self._tpx_save_to_file
-
-    @tpx_save_raw.setter
-    def tpx_save_raw(self, value):
-        if value:
-            self._tpx_save_to_file_yes.put(1)
-        else:
-            self._tpx_save_to_file_no.put(1)
-
-    tpx_start_sophy = ADSignal('TPX_StartSoPhy', has_rbv=True)
-    tpx_status = ADSignal('TPXStatus_RBV', rw=False)
-    tpx_sync_mode = ADSignal('TPXSyncMode', has_rbv=True)
-    tpx_sync_time = ADSignal('TPXSyncTime', has_rbv=True)
-    tpx_system_id = ADSignal('TPXSystemID')
-    tpx_trigger = ADSignal('TPXTrigger')
+    tpx_start_sophy = Cpt(SignalWithRBV, 'TPX_StartSoPhy')
+    tpx_status = Cpt(EpicsSignalRO, 'TPXStatus_RBV')
+    tpx_sync_mode = Cpt(SignalWithRBV, 'TPXSyncMode')
+    tpx_sync_time = Cpt(SignalWithRBV, 'TPXSyncTime')
+    tpx_system_id = Cpt(EpicsSignal, 'TPXSystemID')
+    tpx_trigger = Cpt(EpicsSignal, 'TPXTrigger')
 
     def __init__(self, prefix, file_path='', ioc_file_path='', **kwargs):
-        AreaDetector.__init__(self, prefix, **kwargs)
+        super().__init__(prefix, **kwargs)
 
-        self.filestore = TimepixFileStore(self, self._base_prefix,
-                                          stats=[], shutter=None,
-                                          file_path=file_path,
-                                          ioc_file_path=ioc_file_path,
-                                          name=self.name)
+        # self.filestore = TimepixFileStore(self, self._base_prefix,
+        #                                   stats=[], shutter=None,
+        #                                   file_path=file_path,
+        #                                   ioc_file_path=ioc_file_path,
+        #                                   name=self.name)
 
+
+class HxnTimepixDetector(TimepixDetector):
     def fly_configure(self, path, prefix, num_points,
                       raw=False, external_trig=True, create_dirs=True):
         # NOTE: due to timepix IOC-related issues, can't use external
