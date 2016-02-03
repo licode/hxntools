@@ -1,5 +1,5 @@
 import time
-from ophyd.controls.areadetector.detectors import (ADBase, ADSignal)
+from ophyd.areadetector.detectors import (ADBase, ADSignal)
 from ophyd.utils import TimeoutError
 
 

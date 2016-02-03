@@ -4,8 +4,8 @@ import numpy as np
 import time
 import logging
 
-from ophyd.controls.areadetector.detectors import (AreaDetector, ADSignal)
-from ophyd.controls.area_detector import AreaDetectorFileStoreTIFF
+from ophyd.areadetector.detectors import (AreaDetector, ADSignal)
+from ophyd.area_detector import AreaDetectorFileStoreTIFF
 from .utils import makedirs
 
 

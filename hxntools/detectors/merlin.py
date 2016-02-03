@@ -3,8 +3,8 @@ import logging
 import uuid
 
 from filestore.commands import bulk_insert_datum
-from ophyd.controls.areadetector.detectors import AreaDetector
-from ophyd.controls.area_detector import AreaDetectorFSIterativeWrite
+from ophyd.areadetector.detectors import AreaDetector
+from ophyd.area_detector import AreaDetectorFSIterativeWrite
 from .utils import makedirs
 
 import filestore.api as fs

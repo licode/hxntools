@@ -2,9 +2,8 @@ from __future__ import print_function
 import logging
 import time
 
-from ophyd.controls.areadetector.detectors import (ADBase, ADSignal)
-from ophyd.controls import EpicsSignal
-from ophyd.controls.ophydobj import DetectorStatus
+from ophyd.areadetector.detectors import (ADBase, ADSignal)
+from ophyd import (EpicsSignal, DeviceStatus)
 
 logger = logging.getLogger(__name__)
 
@@ -207,7 +206,7 @@ class Zebra(ADBase):
 
     def trigger(self):
         # Re-implement this to trigger as desired in bluesky
-        status = DetectorStatus(self)
+        status = DeviceStatus(self)
         status._finished()
         return status
 

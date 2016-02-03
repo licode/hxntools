@@ -1,6 +1,6 @@
 import logging
 
-from ophyd.controls import EpicsSignal
+from ophyd import EpicsSignal
 from ophyd.utils import DisconnectedError
 
 logger = logging.getLogger(__name__)

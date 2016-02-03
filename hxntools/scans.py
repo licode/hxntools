@@ -4,8 +4,7 @@ from boltons.iterutils import chunked
 from bluesky.run_engine import Msg
 from bluesky import (plans, simple_scans)
 from bluesky.standard_config import gs
-from ophyd.controls import EpicsSignal
-from ophyd.controls.positioner import Positioner
+from ophyd import (EpicsSignal, Positioner)
 
 
 logger = logging.getLogger(__name__)
