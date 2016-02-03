@@ -91,6 +91,7 @@ class ZebraPulse(Device):
     input_str = Cpt(EpicsSignalRO, 'INP:STR', string=True)
     input_status = Cpt(EpicsSignalRO, 'INP:STA')
     delay = Cpt(EpicsSignalWithRBV, 'DLY')
+    delay_sync = Cpt(EpicsSignal, 'DLY:SYNC')
     time_units = Cpt(EpicsSignalWithRBV, 'PRE', string=True)
     output = Cpt(EpicsSignal, 'OUT')
 
@@ -139,6 +140,7 @@ class ZebraOutputType(Device):
     status = Cpt(EpicsSignalRO, ':STA')
     string = Cpt(EpicsSignalRO, ':STR', string=True)
     sync = Cpt(EpicsSignal, ':SYNC')
+    write_output = Cpt(EpicsSignal, ':SET')
 
 
 class ZebraFrontOutput12(ZebraOutputBase):
@@ -160,16 +162,17 @@ class ZebraFrontOutput4(ZebraOutputBase):
 
 
 class ZebraRearOutput(ZebraOutputBase):
-    enca = Cpt(EpicsSignalWithRBV, 'ENCA')
-    encb = Cpt(EpicsSignalWithRBV, 'ENCB')
-    encz = Cpt(EpicsSignalWithRBV, 'ENCZ')
-    conn = Cpt(EpicsSignalWithRBV, 'CONN')
+    enca = Cpt(ZebraOutputType, 'ENCA')
+    encb = Cpt(ZebraOutputType, 'ENCB')
+    encz = Cpt(ZebraOutputType, 'ENCZ')
+    conn = Cpt(ZebraOutputType, 'CONN')
 
 
 class ZebraGateInput(Device):
     addr = Cpt(EpicsSignalWithRBV, '')
     string = Cpt(EpicsSignalRO, ':STR', string=True)
     status = Cpt(EpicsSignalRO, ':STA')
+    sync = Cpt(EpicsSignal, ':SYNC')
 
     # Input edge index depends on the gate number (these are set in __init__)
     edge = FC(EpicsSignal,
