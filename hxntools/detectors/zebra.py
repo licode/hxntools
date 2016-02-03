@@ -94,13 +94,19 @@ class ZebraPulse(Device):
     time_units = Cpt(EpicsSignalWithRBV, 'PRE', string=True)
     output = Cpt(EpicsSignal, 'OUT')
 
-    input_edge_1 = FC(EpicsSignal, '{self.parent.prefix}POLARITY:BC')
-    input_edge_2 = FC(EpicsSignal, '{self.parent.prefix}POLARITY:BD')
-    input_edge_3 = FC(EpicsSignal, '{self.parent.prefix}POLARITY:BE')
-    input_edge_4 = FC(EpicsSignal, '{self.parent.prefix}POLARITY:BF')
+    input_edge = FC(EpicsSignal, '{self._zebra_prefix}POLARITY:{self._edge_addr}')
 
-    def __init__(self, prefix, *, index=None, **kwargs):
+    _edge_addrs = {1: 'BC',
+                   2: 'BD',
+                   3: 'BE',
+                   4: 'BF',
+                   }
+    def __init__(self, prefix, *, index=None, parent=None, **kwargs):
+        zebra = parent
+
         self.index = index
+        self._zebra_prefix = zebra.prefix
+        self._edge_addr = self._edge_addrs[index]
         super().__init__(prefix, **kwargs)
 
 
@@ -141,33 +147,42 @@ class ZebraRearOutput(ZebraOutput):
     conn = Cpt(EpicsSignalWithRBV, 'CONN')
 
 
-class ZebraGate(Device):
-    input1 = Cpt(EpicsSignalWithRBV, 'INP1')
-    input1_string = Cpt(EpicsSignalRO, 'INP1:STR', string=True)
-    input1_status = Cpt(EpicsSignalRO, 'INP1:STA', string=True)
-
-    input2 = Cpt(EpicsSignalWithRBV, 'INP2')
-    input2_string = Cpt(EpicsSignalRO, 'INP2:STR', string=True)
-    input2_status = Cpt(EpicsSignalRO, 'INP2:STA', string=True)
-
-    output = Cpt(EpicsSignal, 'OUT')
+class ZebraGateInput(Device):
+    addr = Cpt(EpicsSignalWithRBV, '')
+    string = Cpt(EpicsSignalRO, ':STR', string=True)
+    status = Cpt(EpicsSignalRO, ':STA', string=True)
 
     # Input edge index depends on the gate number (these are set in __init__)
-    input1_edge = FC(EpicsSignal,
-                     '{self.parent.prefix}POLARITY:B{self._input1_edge_idx}')
-    input2_edge = FC(EpicsSignal,
-                     '{self.parent.prefix}POLARITY:B{self._input2_edge_idx}')
+    edge = FC(EpicsSignal,
+              '{self._zebra_prefix}POLARITY:B{self._input_edge_idx}')
+
+    def __init__(self, prefix, *, index=None, parent=None, **kwargs):
+        gate = parent
+        zebra = gate.parent
+
+        self.index = index
+        self._zebra_prefix = zebra.prefix
+        self._input_edge_idx = gate._input_edge_idx[self.index]
+
+        super().__init__(prefix, parent=parent, **kwargs)
+
+
+class ZebraGate(Device):
+    input1 = Cpt(ZebraGateInput, 'INP1', index=1)
+    input2 = Cpt(ZebraGateInput, 'INP2', index=2)
+    output = Cpt(EpicsSignal, 'OUT')
 
     def __init__(self, prefix, *, index, **kwargs):
         self.index = index
-        self._input1_edge_idx = index - 1
-        self._input2_edge_idx = 4 + index - 1
+        self._input_edge_idx = {1: index - 1,
+                                2: 4 + index - 1
+                                }
 
         super().__init__(prefix, **kwargs)
 
     def set_input_edges(self, edge1, edge2):
-        set_and_wait(self.input1_edge, int(edge1))
-        set_and_wait(self.input2_edge, int(edge2))
+        set_and_wait(self.input1.edge, int(edge1))
+        set_and_wait(self.input2.edge, int(edge2))
 
 
 class Zebra(Device):
@@ -287,14 +302,14 @@ class HXNZebra(Zebra):
         if self.count_time is not None:
             logger.debug('Step scan pulse-width is %s', self.count_time)
             self.pulse[1].width.put(ZebraAddresses.count_time)
-            self.pulse[1].time_units.value = 's'
+            self.pulse[1].time_units.put('s')
 
-        self.pulse[1].delay.value = 0.0
-        self.pulse[1].input_edge.value = 1
+        self.pulse[1].delay.put(0.0)
+        self.pulse[1].input_edge.put(1)
 
         # To be used in regular scaler mode, scaler 1 has to have
         # inhibit cleared and counting enabled:
-        self.soft_input4.value = 1
+        self.soft_input4.addr.put(1)
 
         # Timepix
         # self.output[1].ttl = self.PULSE1
@@ -302,8 +317,8 @@ class HXNZebra(Zebra):
         self.output[1].ttl.put(ZebraAddresses.PULSE1)
         self.output[2].ttl.put(ZebraAddresses.SOFT_IN4)
 
-        self.gate[2].input1.put(ZebraAddresses.PULSE1)
-        self.gate[2].input2.put(ZebraAddresses.PULSE1)
+        self.gate[2].input1.addr.put(ZebraAddresses.PULSE1)
+        self.gate[2].input2.addr.put(ZebraAddresses.PULSE1)
         self.gate[2].set_input_edges(0, 1)
 
         self.output[3].ttl.put(ZebraAddresses.SOFT_IN4)
@@ -315,8 +330,8 @@ class HXNZebra(Zebra):
     def fly_scan(self):
         super().fly_scan()
 
-        self.gate[1].input1.put(ZebraAddresses.IN3_OC)
-        self.gate[1].input2.put(ZebraAddresses.IN3_OC)
+        self.gate[1].input1.addr.put(ZebraAddresses.IN3_OC)
+        self.gate[1].input2.addr.put(ZebraAddresses.IN3_OC)
         self.gate[1].set_input_edges(1, 0)
 
         # timepix:
@@ -326,8 +341,8 @@ class HXNZebra(Zebra):
         self.output[1].ttl.put(ZebraAddresses.GATE2)
         self.output[2].ttl.put(ZebraAddresses.GATE1)
 
-        self.gate[2].input1.put(ZebraAddresses.IN3_OC)
-        self.gate[2].input2.put(ZebraAddresses.IN3_OC)
+        self.gate[2].input1.addr.put(ZebraAddresses.IN3_OC)
+        self.gate[2].input2.addr.put(ZebraAddresses.IN3_OC)
         self.gate[2].set_input_edges(0, 1)
 
         self.output[3].ttl.put(ZebraAddresses.GATE2)
