@@ -282,11 +282,11 @@ class HXNZebra(Zebra):
         #
         # OUT3_TTL Scaler 1 gate
         # OUT4_TTL Xspress3
-        self.pulse[1].input_addr.value = self.IN1_TTL
+        self.pulse[1].input_addr.put(ZebraAddresses.IN1_TTL)
 
         if self.count_time is not None:
             logger.debug('Step scan pulse-width is %s', self.count_time)
-            self.pulse[1].width.value = self.count_time
+            self.pulse[1].width.put(ZebraAddresses.count_time)
             self.pulse[1].time_units.value = 's'
 
         self.pulse[1].delay.value = 0.0
@@ -299,42 +299,42 @@ class HXNZebra(Zebra):
         # Timepix
         # self.output[1].ttl = self.PULSE1
         # Merlin
-        self.output[1].ttl.value = self.PULSE1
-        self.output[2].ttl.value = self.SOFT_IN4
+        self.output[1].ttl.put(ZebraAddresses.PULSE1)
+        self.output[2].ttl.put(ZebraAddresses.SOFT_IN4)
 
-        self.gate[2].input1.value = self.PULSE1
-        self.gate[2].input2.value = self.PULSE1
+        self.gate[2].input1.put(ZebraAddresses.PULSE1)
+        self.gate[2].input2.put(ZebraAddresses.PULSE1)
         self.gate[2].set_input_edges(0, 1)
 
-        self.output[3].ttl.value = self.SOFT_IN4
-        self.output[4].ttl.value = self.GATE2
+        self.output[3].ttl.put(ZebraAddresses.SOFT_IN4)
+        self.output[4].ttl.put(ZebraAddresses.GATE2)
 
         # Merlin LVDS
-        self.output[1].lvds.value = self.PULSE1
+        self.output[1].lvds.put(ZebraAddresses.PULSE1)
 
     def fly_scan(self):
         super().fly_scan()
 
-        self.gate[1].input1.value = self.IN3_OC
-        self.gate[1].input2.value = self.IN3_OC
+        self.gate[1].input1.put(ZebraAddresses.IN3_OC)
+        self.gate[1].input2.put(ZebraAddresses.IN3_OC)
         self.gate[1].set_input_edges(1, 0)
 
         # timepix:
         # self.output[1].ttl = self.GATE1
         # merlin:
         # (Merlin is now on TTL 1 output, replacing timepix 1)
-        self.output[1].ttl.value = self.GATE2
-        self.output[2].ttl.value = self.GATE1
+        self.output[1].ttl.put(ZebraAddresses.GATE2)
+        self.output[2].ttl.put(ZebraAddresses.GATE1)
 
-        self.gate[2].input1.value = self.IN3_OC
-        self.gate[2].input2.value = self.IN3_OC
+        self.gate[2].input1.put(ZebraAddresses.IN3_OC)
+        self.gate[2].input2.put(ZebraAddresses.IN3_OC)
         self.gate[2].set_input_edges(0, 1)
 
-        self.output[3].ttl.value = self.GATE2
-        self.output[4].ttl.value = self.GATE2
+        self.output[3].ttl.put(ZebraAddresses.GATE2)
+        self.output[4].ttl.put(ZebraAddresses.GATE2)
 
         # Merlin LVDS
-        # self.output[1].lvds.value = self.GATE2
+        # self.output[1].lvds.put(ZebraAddresses.GATE2)
 
     def set(self, total_points=None, scan_mode='step_scan', **kwargs):
         self.scan_mode = scan_mode
