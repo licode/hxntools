@@ -110,37 +110,56 @@ class ZebraPulse(Device):
         super().__init__(prefix, **kwargs)
 
 
-class ZebraOutput(Device):
+class ZebraOutputBase(Device):
+    '''The base of all zebra outputs (1~8)
+
+        Front outputs
+        # TTL  LVDS  NIM  PECL  OC  ENC
+        1  o    o     o
+        2  o    o     o
+        3  o    o               o
+        4  o          o    o
+
+        Rear outputs
+        # TTL  LVDS  NIM  PECL  OC  ENC
+        5                            o
+        6                            o
+        7                            o
+        8                            o
+
+    '''
     def __init__(self, prefix, *, index=None, **kwargs):
         self.index = index
         super().__init__(prefix, **kwargs)
 
-# Front outputs
-# # TTL  LVDS  NIM  PECL  OC
-# 1  o    o     o
-# 2  o    o     o
-# 3  o    o               o
-# 4  o          o    o
 
-class ZebraFrontOutput12(ZebraOutput):
-    ttl = Cpt(EpicsSignalWithRBV, 'TTL')
-    lvds = Cpt(EpicsSignalWithRBV, 'LVDS')
-    nim = Cpt(EpicsSignalWithRBV, 'NIM')
+class ZebraOutputType(Device):
+    '''Shared by all output types (ttl, lvds, nim, pecl, out)'''
+    addr = Cpt(EpicsSignalWithRBV, '')
+    status = Cpt(EpicsSignalRO, ':STA')
+    string = Cpt(EpicsSignalRO, ':STR', string=True)
+    sync = Cpt(EpicsSignal, ':SYNC')
 
 
-class ZebraFrontOutput3(ZebraOutput):
-    ttl = Cpt(EpicsSignalWithRBV, 'TTL')
-    lvds = Cpt(EpicsSignalWithRBV, 'LVDS')
-    open_collector = Cpt(EpicsSignalWithRBV, 'OC')
+class ZebraFrontOutput12(ZebraOutputBase):
+    ttl = Cpt(ZebraOutputType, 'TTL')
+    lvds = Cpt(ZebraOutputType, 'LVDS')
+    nim = Cpt(ZebraOutputType,'NIM')
 
 
-class ZebraFrontOutput4(ZebraOutput):
-    ttl = Cpt(EpicsSignalWithRBV, 'TTL')
-    nim = Cpt(EpicsSignalWithRBV, 'NIM')
-    pecl = Cpt(EpicsSignalWithRBV, 'PECL')
+class ZebraFrontOutput3(ZebraOutputBase):
+    ttl = Cpt(ZebraOutputType, 'TTL')
+    lvds = Cpt(ZebraOutputType, 'LVDS')
+    open_collector = Cpt(ZebraOutputType, 'OC')
 
 
-class ZebraRearOutput(ZebraOutput):
+class ZebraFrontOutput4(ZebraOutputBase):
+    ttl = Cpt(ZebraOutputType, 'TTL')
+    nim = Cpt(ZebraOutputType, 'NIM')
+    pecl = Cpt(ZebraOutputType, 'PECL')
+
+
+class ZebraRearOutput(ZebraOutputBase):
     enca = Cpt(EpicsSignalWithRBV, 'ENCA')
     encb = Cpt(EpicsSignalWithRBV, 'ENCB')
     encz = Cpt(EpicsSignalWithRBV, 'ENCZ')
@@ -150,7 +169,7 @@ class ZebraRearOutput(ZebraOutput):
 class ZebraGateInput(Device):
     addr = Cpt(EpicsSignalWithRBV, '')
     string = Cpt(EpicsSignalRO, ':STR', string=True)
-    status = Cpt(EpicsSignalRO, ':STA', string=True)
+    status = Cpt(EpicsSignalRO, ':STA')
 
     # Input edge index depends on the gate number (these are set in __init__)
     edge = FC(EpicsSignal,
@@ -217,7 +236,7 @@ class Zebra(Device):
         super().__init__(prefix, **kwargs)
 
         self.pulse = dict(self._get_indexed_devices(ZebraPulse))
-        self.output = dict(self._get_indexed_devices(ZebraOutput))
+        self.output = dict(self._get_indexed_devices(ZebraOutputBase))
         self.gate = dict(self._get_indexed_devices(ZebraGate))
 
         if scan_modes is None:
