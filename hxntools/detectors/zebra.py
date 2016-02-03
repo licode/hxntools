@@ -86,12 +86,12 @@ class EpicsSignalWithRBV(EpicsSignal):
 
 
 class ZebraPulse(Device):
-    width = Cpt(EpicsSignal, 'WID')
-    input_addr = Cpt(EpicsSignal, 'INP')
+    width = Cpt(EpicsSignalWithRBV, 'WID')
+    input_addr = Cpt(EpicsSignalWithRBV, 'INP')
     input_str = Cpt(EpicsSignalRO, 'INP:STR', string=True)
     input_status = Cpt(EpicsSignalRO, 'INP:STA')
-    delay = Cpt(EpicsSignal, 'DLY')
-    time_units = Cpt(EpicsSignal, 'PRE', string=True)
+    delay = Cpt(EpicsSignalWithRBV, 'DLY')
+    time_units = Cpt(EpicsSignalWithRBV, 'PRE', string=True)
     output = Cpt(EpicsSignal, 'OUT')
 
     input_edge_1 = FC(EpicsSignal, '{self.parent.prefix}POLARITY:BC')
@@ -117,36 +117,36 @@ class ZebraOutput(Device):
 # 4  o          o    o
 
 class ZebraFrontOutput12(ZebraOutput):
-    ttl = Cpt(EpicsSignal, 'TTL')
-    lvds = Cpt(EpicsSignal, 'LVDS')
-    nim = Cpt(EpicsSignal, 'NIM')
+    ttl = Cpt(EpicsSignalWithRBV, 'TTL')
+    lvds = Cpt(EpicsSignalWithRBV, 'LVDS')
+    nim = Cpt(EpicsSignalWithRBV, 'NIM')
 
 
 class ZebraFrontOutput3(ZebraOutput):
-    ttl = Cpt(EpicsSignal, 'TTL')
-    lvds = Cpt(EpicsSignal, 'LVDS')
-    open_collector = Cpt(EpicsSignal, 'OC')
+    ttl = Cpt(EpicsSignalWithRBV, 'TTL')
+    lvds = Cpt(EpicsSignalWithRBV, 'LVDS')
+    open_collector = Cpt(EpicsSignalWithRBV, 'OC')
 
 
 class ZebraFrontOutput4(ZebraOutput):
-    ttl = Cpt(EpicsSignal, 'TTL')
-    nim = Cpt(EpicsSignal, 'NIM')
-    pecl = Cpt(EpicsSignal, 'PECL')
+    ttl = Cpt(EpicsSignalWithRBV, 'TTL')
+    nim = Cpt(EpicsSignalWithRBV, 'NIM')
+    pecl = Cpt(EpicsSignalWithRBV, 'PECL')
 
 
 class ZebraRearOutput(ZebraOutput):
-    enca = Cpt(EpicsSignal, 'ENCA')
-    encb = Cpt(EpicsSignal, 'ENCB')
-    encz = Cpt(EpicsSignal, 'ENCZ')
-    conn = Cpt(EpicsSignal, 'CONN')
+    enca = Cpt(EpicsSignalWithRBV, 'ENCA')
+    encb = Cpt(EpicsSignalWithRBV, 'ENCB')
+    encz = Cpt(EpicsSignalWithRBV, 'ENCZ')
+    conn = Cpt(EpicsSignalWithRBV, 'CONN')
 
 
 class ZebraGate(Device):
-    input1 = Cpt(EpicsSignal, 'INP1')
+    input1 = Cpt(EpicsSignalWithRBV, 'INP1')
     input1_string = Cpt(EpicsSignalRO, 'INP1:STR', string=True)
     input1_status = Cpt(EpicsSignalRO, 'INP1:STA', string=True)
 
-    input2 = Cpt(EpicsSignal, 'INP2')
+    input2 = Cpt(EpicsSignalWithRBV, 'INP2')
     input2_string = Cpt(EpicsSignalRO, 'INP2:STR', string=True)
     input2_status = Cpt(EpicsSignalRO, 'INP2:STA', string=True)
 
