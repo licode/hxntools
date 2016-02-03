@@ -1,8 +1,8 @@
 from __future__ import print_function
 import logging
 
-from ophyd import (OphydObject, EpicsSignalRO, DeviceStatus)
-from ophyd import (Component as Cpt)
+from ophyd import (EpicsSignalRO, DeviceStatus)
+from ophyd import (Device, Component as Cpt)
 
 logger = logging.getLogger(__name__)
 
@@ -20,8 +20,8 @@ class BeamStatusDetector(Device):
 
         super().__init__(prefix, read_attrs=read_attrs, **kwargs)
 
-        self._shutter_ok = False
-        self._current_ok = False
+        self._shutter_ok = None
+        self._current_ok = None
         self._last_status = None
         self._statuses = []
 
@@ -52,6 +52,9 @@ class BeamStatusDetector(Device):
         return self._shutter_ok and self._current_ok
 
     def _check_status(self):
+        if self._shutter_ok is None or self._current_ok is None:
+            return
+
         status = self.status
 
         if status:
@@ -76,13 +79,13 @@ class BeamStatusDetector(Device):
 
     def _done(self):
         for status in self._statuses:
-            status.done = True
+            status._finished()
 
     def trigger(self):
         status = DeviceStatus(self)
 
         if self.status:
-            status.done = True
+            status._finished()
         else:
             self._statuses.append(status)
 
