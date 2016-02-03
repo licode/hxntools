@@ -173,6 +173,7 @@ class ZebraGateInput(Device):
     string = Cpt(EpicsSignalRO, ':STR', string=True)
     status = Cpt(EpicsSignalRO, ':STA')
     sync = Cpt(EpicsSignal, ':SYNC')
+    write_input = Cpt(EpicsSignal, ':SET')
 
     # Input edge index depends on the gate number (these are set in __init__)
     edge = FC(EpicsSignal,
