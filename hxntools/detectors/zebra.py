@@ -77,6 +77,14 @@ class ZebraAddresses(IntEnum):
     SOFT_IN4 = 63
 
 
+class EpicsSignalWithRBV(EpicsSignal):
+    # An EPICS signal that uses the Zebra convention of 'pvname' being the
+    # setpoint and 'pvname:RBV' being the read-back
+
+    def __init__(self, prefix, **kwargs):
+        super().__init__(prefix + ':RBV', write_pv=prefix, **kwargs)
+
+
 class ZebraPulse(Device):
     width = Cpt(EpicsSignal, 'WID')
     input_addr = Cpt(EpicsSignal, 'INP')
@@ -101,12 +109,28 @@ class ZebraOutput(Device):
         self.index = index
         super().__init__(prefix, **kwargs)
 
+# Front outputs
+# # TTL  LVDS  NIM  PECL  OC
+# 1  o    o     o
+# 2  o    o     o
+# 3  o    o               o
+# 4  o          o    o
 
-class ZebraFrontOutput(ZebraOutput):
+class ZebraFrontOutput12(ZebraOutput):
     ttl = Cpt(EpicsSignal, 'TTL')
+    lvds = Cpt(EpicsSignal, 'LVDS')
     nim = Cpt(EpicsSignal, 'NIM')
+
+
+class ZebraFrontOutput3(ZebraOutput):
+    ttl = Cpt(EpicsSignal, 'TTL')
     lvds = Cpt(EpicsSignal, 'LVDS')
     open_collector = Cpt(EpicsSignal, 'OC')
+
+
+class ZebraFrontOutput4(ZebraOutput):
+    ttl = Cpt(EpicsSignal, 'TTL')
+    nim = Cpt(EpicsSignal, 'NIM')
     pecl = Cpt(EpicsSignal, 'PECL')
 
 
@@ -157,10 +181,10 @@ class Zebra(Device):
     pulse3 = Cpt(ZebraPulse, 'PULSE3_', index=3)
     pulse4 = Cpt(ZebraPulse, 'PULSE4_', index=4)
 
-    output1 = Cpt(ZebraFrontOutput, 'OUT1_', index=1)
-    output2 = Cpt(ZebraFrontOutput, 'OUT2_', index=2)
-    output3 = Cpt(ZebraFrontOutput, 'OUT3_', index=3)
-    output4 = Cpt(ZebraFrontOutput, 'OUT4_', index=4)
+    output1 = Cpt(ZebraFrontOutput12, 'OUT1_', index=1)
+    output2 = Cpt(ZebraFrontOutput12, 'OUT2_', index=2)
+    output3 = Cpt(ZebraFrontOutput3, 'OUT3_', index=3)
+    output4 = Cpt(ZebraFrontOutput4, 'OUT4_', index=4)
 
     output5 = Cpt(ZebraRearOutput, 'OUT5_', index=5)
     output6 = Cpt(ZebraRearOutput, 'OUT6_', index=6)
