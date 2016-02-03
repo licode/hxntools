@@ -135,6 +135,7 @@ class ZebraGate(Device):
                      '{self.parent.prefix}POLARITY:B{self._input2_edge_idx}')
 
     def __init__(self, prefix, *, index, **kwargs):
+        self.index = index
         self._input1_edge_idx = index - 1
         self._input2_edge_idx = 4 + index - 1
 
@@ -237,8 +238,8 @@ class Zebra(Device):
 
 class HXNZebra(Zebra):
     def __init__(self, prefix, **kwargs):
-        scan_modes = dict(step_scan, self.step_scan,
-                          fly_scan, self.fly_scan)
+        scan_modes = dict(step_scan=self.step_scan,
+                          fly_scan=self.fly_scan)
         super().__init__(prefix, scan_modes=scan_modes, **kwargs)
 
         # NOTE: count_time comes from bluesky
