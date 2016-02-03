@@ -1,25 +1,25 @@
 from __future__ import print_function
 import time
 import logging
-import uuid
-import itertools
 
-from collections import (namedtuple, OrderedDict)
+# import itertools
+# import filestore.api as fs_api
+# from filestore.commands import bulk_insert_datum
+# from .utils import makedirs
+
+from collections import OrderedDict
 
 import h5py
-import filestore.api as fs_api
-from filestore.commands import bulk_insert_datum
 
-from ophyd.areadetector import (AreaDetector, CamBase, ADBase,
+from ophyd.areadetector import (AreaDetector, CamBase,
                                 EpicsSignalWithRBV as SignalWithRBV)
 from ophyd import (Signal, EpicsSignal, EpicsSignalRO)
 
-# from ophyd.area_detector import AreaDetectorFileStore
 from ophyd import (Device, Component as C, FormattedComponent as FC,
                    DynamicDeviceComponent as DDC)
 from ophyd.areadetector.plugins import PluginBase
-
-from .utils import makedirs
+from ophyd.areadetector.filestore_mixins import (FileStoreBase, new_uid)
+from ophyd.areadetector.trigger_mixins import (TriggerBase, SingleTrigger)
 
 from ..handlers import Xspress3HDF5Handler
 from ..handlers.xspress3 import XRF_DATA_KEY
@@ -228,6 +228,12 @@ logger = logging.getLogger(__name__)
 #     @property
 #     def ioc_filename(self):
 #         return self._ioc_filename
+
+
+class Xspress3ExternalTrigger(SingleTrigger):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, image_name='xspress3', **kwargs)
+
 
 class Xspress3DetectorCam(CamBase):
     '''Quantum Detectors Xspress3 detector'''
@@ -500,9 +506,6 @@ class Xspress3Detector(AreaDetector):
 
     # XF:03IDC-ES{Xsp:1}           C1_   ...
     channel1 = C(Xspress3Channel, 'C1_', channel_num=1)
-    channel2 = C(Xspress3Channel, 'C2_', channel_num=2)
-    channel3 = C(Xspress3Channel, 'C3_', channel_num=3)
-    channel4 = C(Xspress3Channel, 'C4_', channel_num=4)
 
     def __init__(self, prefix, *, read_attrs=None, configuration_attrs=None,
                  monitor_attrs=None, name=None, parent=None,
@@ -606,7 +609,7 @@ class Xspress3Detector(AreaDetector):
             raise RuntimeError('Unable to open HDF5 file; exceeded maximum '
                                'retries')
 
-    def read_hdf5(self, fn, *, rois=None, wait=True, max_retries=2,
+    def read_hdf5(self, fn, *, rois=None, max_retries=2,
                   data_key=XRF_DATA_KEY):
         '''Read ROI data from an HDF5 file using the current ROI configuration
 
@@ -621,9 +624,6 @@ class Xspress3Detector(AreaDetector):
             rois = self.enabled_rois
 
         num_points = self.cam.num_images.get()
-        if not wait:
-            max_retries = 1
-
         hdf = self.open_hdf5_wait(fn, max_retries=max_retries,
                                   try_stop=False)
 
@@ -644,3 +644,17 @@ class Xspress3Detector(AreaDetector):
                                 value_sum=None)
 
             yield roi.name, roi_info
+
+
+class HxnXspress3Detector(Xspress3Detector):
+    channel1 = C(Xspress3Channel, 'C1_', channel_num=1)
+    channel2 = C(Xspress3Channel, 'C2_', channel_num=2)
+    channel3 = C(Xspress3Channel, 'C3_', channel_num=3)
+
+    # Currently only using three channels. Uncomment these to enable more
+    # channels:
+    # channel4 = C(Xspress3Channel, 'C4_', channel_num=4)
+    # channel5 = C(Xspress3Channel, 'C5_', channel_num=5)
+    # channel6 = C(Xspress3Channel, 'C6_', channel_num=6)
+    # channel7 = C(Xspress3Channel, 'C7_', channel_num=7)
+    # channel8 = C(Xspress3Channel, 'C8_', channel_num=8)
