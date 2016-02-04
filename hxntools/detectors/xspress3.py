@@ -318,6 +318,11 @@ class EvSignal(DerivedSignal):
         return desc
 
 
+class Xspress3ROISettings(PluginBase):
+    '''Full areaDetector plugin settings'''
+    pass
+
+
 class Xspress3ROI(Device):
     '''A configurable Xspress3 EPICS ROI'''
 
@@ -333,9 +338,8 @@ class Xspress3ROI(Device):
     value = C(EpicsSignalRO, 'Value_RBV')
     value_sum = C(EpicsSignalRO, 'ValueSum_RBV')
 
-    # enable = C(SignalWithRBV, 'Enable')
-
-    # ad_plugin = C(PluginBase, '')
+    enable = C(SignalWithRBV, 'EnableCallbacks')
+    # ad_plugin = C(Xspress3ROISettings, '')
 
     def __init__(self, prefix, *, roi_num=0, use_sum=False,
                  read_attrs=None, configuration_attrs=None, parent=None,
@@ -350,10 +354,12 @@ class Xspress3ROI(Device):
         if configuration_attrs is None:
             configuration_attrs = ['ev_low', 'ev_high', 'enable']
 
-        channel = parent.parent
+        rois = parent
+        channel = rois.parent
         self._channel = channel
         self._roi_num = roi_num
         self._use_sum = use_sum
+        self._ad_plugin = getattr(rois, 'ad_attr{:02d}'.format(roi_num))
 
         if bin_suffix is None:
             bin_suffix = 'MCA_ROI{}'.format(roi_num)
@@ -442,7 +448,7 @@ def make_rois(rois):
 
         # AreaDetector NDPluginAttribute information
         attr = 'ad_attr{:02d}'.format(roi)
-        defn[attr] = (PluginBase, 'ROI{}:'.format(roi), {})
+        defn[attr] = (Xspress3ROISettings, 'ROI{}:'.format(roi), {})
         # e.g., device.rois.roi01 = Xspress3ROI('ROI1:', roi_num=1)
 
         # TODO: 'roi01' and 'ad_attr_01' have the same prefix and could
@@ -507,6 +513,8 @@ class Xspress3Detector(AreaDetector):
     # XF:03IDC-ES{Xsp:1}           C1_   ...
     channel1 = C(Xspress3Channel, 'C1_', channel_num=1)
 
+    data_key = XRF_DATA_KEY
+
     def __init__(self, prefix, *, read_attrs=None, configuration_attrs=None,
                  monitor_attrs=None, name=None, parent=None,
                  # to remove?
@@ -556,12 +564,6 @@ class Xspress3Detector(AreaDetector):
         # make an ordered dictionary with the channels in order
         self._channels = OrderedDict(sorted(channels.items()))
 
-        # self.filestore = Xspress3FileStore(self, self._base_prefix,
-        #                                    stats=[], shutter=None,
-        #                                    file_path=file_path,
-        #                                    ioc_file_path=ioc_file_path,
-        #                                    name=self.name)
-
     @property
     def channels(self):
         return self._channels.copy()
@@ -609,8 +611,7 @@ class Xspress3Detector(AreaDetector):
             raise RuntimeError('Unable to open HDF5 file; exceeded maximum '
                                'retries')
 
-    def read_hdf5(self, fn, *, rois=None, max_retries=2,
-                  data_key=XRF_DATA_KEY):
+    def read_hdf5(self, fn, *, rois=None, max_retries=2):
         '''Read ROI data from an HDF5 file using the current ROI configuration
 
         Parameters
@@ -629,7 +630,7 @@ class Xspress3Detector(AreaDetector):
 
         RoiTuple = Xspress3ROI.get_device_tuple()
 
-        handler = Xspress3HDF5Handler(hdf, key=data_key)
+        handler = Xspress3HDF5Handler(hdf, key=self.data_key)
         for roi in self.enabled_rois:
             roi_data = handler.get_roi(chan=roi.channel_num,
                                        bin_low=roi.bin_low.get(),
