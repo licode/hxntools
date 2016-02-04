@@ -50,7 +50,7 @@ def scan_setup(detectors, total_points):
             logger.debug('Skipping detector %s', det)
             continue
         logger.debug('Setting up detector %s', det)
-        yield Msg('set', det, scan_mode='step_scan', total_points=total_points)
+        yield Msg('set', det, scan_type='step_scan', total_points=total_points)
 
 
 class HxnScanMixin1D:

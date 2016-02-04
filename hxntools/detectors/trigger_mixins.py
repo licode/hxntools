@@ -1,9 +1,13 @@
 import time as ttime
 import logging
 import itertools
+import uuid
 
 from ophyd.device import (DeviceStatus, BlueskyInterface, Staged)
 from ophyd.utils import set_and_wait
+from ophyd.areadetector.filestore_mixins import FileStoreIterativeWrite
+
+from filestore.commands import bulk_insert_datum
 
 logger = logging.getLogger(__name__)
 
@@ -20,42 +24,52 @@ class TriggerBase(BlueskyInterface):
         self._acquisition_signal = self.cam.acquire
 
 
-class HxnModalTrigger(BlueSkyInterface):
+class HxnModalTrigger(TriggerBase):
     def __init__(self, *args, image_name=None, **kwargs):
         super().__init__(*args, **kwargs)
         if image_name is None:
             image_name = '_'.join([self.name, 'image'])
         self._image_name = image_name
 
-    def set(self, *, total_points=0, external_trig=False, master=None):
+    def set(self, *, total_points=0, external_trig=False, master=None,
+            scan_type=None):
         self._master = master
         self._total_points = total_points
         self._external_trig = bool(external_trig)
+        self._scan_type = scan_type
 
         if self._master is not None or self._external_trig:
-            self.mode_setup('external')
+            mode = 'external'
         else:
-            self.mode_setup('internal')
+            mode = 'internal'
 
-    def mode_setup(self, mode):
-        attr = 'setup_{}'.format(mode)
-        if hasattr(self, attr):
-            mode_setup_method = getattr(self, attr)
-            mode_setup_method()
+        self.mode_setup(mode, scan_type=scan_type)
 
-    def setup_internal(self):
-        cam = self.parent.cam
+    def mode_setup(self, mode, **kwargs):
+        devices = [self] + [getattr(self, attr) for attr in self._sub_devices]
+        attr = 'mode_{}'.format(mode)
+        for dev in devices:
+            if hasattr(dev, attr):
+                mode_setup_method = getattr(dev, attr)
+                mode_setup_method(**kwargs)
+
+    def mode_internal(self, scan_type=None):
+        logger.info('%s internal triggering (scan_type=%s)', self.name,
+                    scan_type)
+        cam = self.cam
         self.stage_sigs[cam.num_images] = 1
         self.stage_sigs[cam.image_mode] = 'Single'
         self.stage_sigs[cam.trigger_mode] = 'Internal'
         if cam.acquire in self.stage_sigs:
             del self.stage_sigs[cam.acquire]
 
-    def setup_external(self):
+    def mode_external(self, scan_type=None):
+        logger.info('%s external triggering (scan_type=%s)', self.name,
+                    scan_type)
         if self._total_points is None:
             raise RuntimeError('set was not called on this detector')
 
-        cam = self.parent.cam
+        cam = self.cam
         self.stage_sigs[cam.num_images] = self._total_points
         self.stage_sigs[cam.image_mode] = 'Multiple'
         self.stage_sigs[cam.trigger_mode] = 'External'
@@ -74,13 +88,6 @@ class HxnModalTrigger(BlueSkyInterface):
             self._master = None
 
     def trigger(self):
-        '''Trigger one acquisition.'''
-        if self._external_trig:
-            self.trigger_external()
-        else:
-            self.trigger_internal()
-
-    def trigger_internal(self):
         if self._staged != Staged.yes:
             raise RuntimeError("This detector is not ready to trigger."
                                "Call the stage() method before triggering.")
@@ -90,9 +97,6 @@ class HxnModalTrigger(BlueSkyInterface):
         self.dispatch(self._image_name, ttime.time())
         return self._status
 
-    def trigger_external(self):
-        pass
-
     def _acquire_changed(self, value=None, old_value=None, **kwargs):
         '''This is called when the 'acquire' signal changes.'''
         if self._status is None:
@@ -101,9 +105,14 @@ class HxnModalTrigger(BlueSkyInterface):
             # Negative-going edge means an acquisition just finished.
             self._status._finished()
 
+
+class FileStoreBulkReadable(FileStoreIterativeWrite):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
     def bulk_read(self, timestamps):
         # TODO update
         uids = list(str(uuid.uuid4()) for ts in timestamps)
         datum_args = (dict(point_number=i) for i in range(len(uids)))
-        bulk_insert_datum(self._filestore_res, uids, datum_args)
-        return {self._det.name: uids}
+        bulk_insert_datum(self._resource, uids, datum_args)
+        return {self.parent._image_name: uids}
