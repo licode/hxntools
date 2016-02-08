@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 class BeamStatusDetector(Device):
     shutter_status = Cpt(EpicsSignalRO, 'SR-EPS{PLC:1}Sts:MstrSh-Sts')
     beam_current = Cpt(EpicsSignalRO, 'SR:C03-BI{DCCT:1}I:Real-I')
+    enabled = Cpt(EpicsSignalRO, 'SR:C03-EPS{PLC:1}Sts:ID_BE_Enbl-Sts')
 
     def __init__(self, prefix='', *, min_current=100.0, read_attrs=None,
                  **kwargs):
@@ -22,11 +23,13 @@ class BeamStatusDetector(Device):
 
         self._shutter_ok = None
         self._current_ok = None
+        self._enabled_ok = None
         self._last_status = None
         self._statuses = []
 
         self.shutter_status.subscribe(self._shutter_changed)
         self.beam_current.subscribe(self._current_changed)
+        self.enabled.subscribe(self._enabled_changed)
 
     @property
     def min_current(self):
@@ -47,12 +50,16 @@ class BeamStatusDetector(Device):
         self._current_ok = (value > self._min_current)
         self._check_status()
 
+    def _enabled_changed(self, value=None, **kwargs):
+        self._enabled_ok = (value == 1)
+        self._check_status()
+
     @property
     def status(self):
-        return self._shutter_ok and self._current_ok
+        return self._shutter_ok and self._current_ok and self._enabled
 
     def _check_status(self):
-        if self._shutter_ok is None or self._current_ok is None:
+        if None in (self._shutter_ok, self._current_ok, self._enabled_ok):
             return
 
         status = self.status
@@ -62,6 +69,11 @@ class BeamStatusDetector(Device):
 
         if status != self._last_status:
             logger.warning('Beam status changed:')
+
+            if self._enabled_ok:
+                logger.warning('Beamline is enabled')
+            else:
+                logger.warning('Beamline is NOT enabled')
 
             if self._shutter_ok:
                 logger.warning('Shutters are open')
