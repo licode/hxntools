@@ -31,6 +31,25 @@ class HxnModalTrigger(TriggerBase):
             image_name = '_'.join([self.name, 'image'])
         self._image_name = image_name
 
+        # Count time is what the user typed on the command line for the time
+        # parameter (passed in from _set_acquire_time of bluesky)
+        self._count_time = None
+
+    @property
+    def count_time(self):
+        return self._count_time
+
+    @count_time.setter
+    def count_time(self, value):
+        if value is None:
+            return
+
+        self._count_time = value
+        self._count_time_set(value)
+
+    def _count_time_set(self, count_time):
+        pass
+
     def set(self, *, total_points=0, external_trig=False, master=None,
             scan_type=None):
         self._master = master
@@ -46,6 +65,7 @@ class HxnModalTrigger(TriggerBase):
         self.mode_setup(mode, scan_type=scan_type)
 
     def mode_setup(self, mode, **kwargs):
+        self.mode = mode
         devices = [self] + [getattr(self, attr) for attr in self._sub_devices]
         attr = 'mode_{}'.format(mode)
         for dev in devices:
@@ -73,6 +93,7 @@ class HxnModalTrigger(TriggerBase):
         self.stage_sigs[cam.num_images] = self._total_points
         self.stage_sigs[cam.image_mode] = 'Multiple'
         self.stage_sigs[cam.trigger_mode] = 'External'
+        # TODO this may belong in trigger(?)
         self.stage_sigs[cam.acquire] = 1
 
     def stage(self):

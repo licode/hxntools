@@ -37,13 +37,6 @@ class MerlinTIFFPlugin(FileStoreTIFF, FileStoreBulkReadable, TIFFPlugin):
         logger.info('%s internal triggering (scan_type=%s)', self.name,
                     scan_type)
 
-        remove_sigs = [self.cam.acquire_time,
-                       self.cam.acquire_period]
-        for sig in remove_sigs:
-            try:
-                del self.stage_sigs[sig]
-            except KeyError:
-                pass
 
     def mode_external(self, scan_type=None):
         # super().mode_external(scan_type=scan_type) # <- no super implementation
@@ -71,3 +64,10 @@ class MerlinDetector(AreaDetector):
 class HxnMerlinDetector(HxnModalTrigger, MerlinDetector):
     tiff1 = Cpt(MerlinTIFFPlugin, 'TIFF1:',
                 write_path_template='/data/%Y/%m/%d/')
+
+    def _count_time_set(self, count_time):
+        if self.mode == 'external':
+            return
+
+        self.tiff1.stage_sigs[self.cam.acquire_time] = count_time
+        self.tiff1.stage_sigs[self.cam.acquire_period] = count_time + 0.002
