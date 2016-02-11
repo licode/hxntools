@@ -56,7 +56,7 @@ class BeamStatusDetector(Device):
 
     @property
     def status(self):
-        return self._shutter_ok and self._current_ok and self._enabled
+        return self._shutter_ok and self._current_ok and self._enabled_ok
 
     def _check_status(self):
         if None in (self._shutter_ok, self._current_ok, self._enabled_ok):
