@@ -1,0 +1,74 @@
+import collections
+from ophyd import (EpicsScaler, Device,
+                   Component as Cpt, DynamicDeviceComponent as DDC,
+                   EpicsMCA, EpicsSignal, EpicsSignalRO)
+
+
+class StruckMCA(EpicsMCA):
+    def __init__(self, prefix, *, index=None, **kwargs):
+        self.index = index
+        super().__init__(prefix, **kwargs)
+
+
+def _struck_mca_records(prefix_format, range_):
+    recs = collections.OrderedDict()
+
+    for i in range(1, count):
+        attr = 'mca{:02d}'.format(i)
+        mca_prefix = prefix_format.format(i)
+        recs[attr] = (StruckMCA, mca_prefix, dict(index=i))
+
+
+class StruckScaler(Device):
+    mca_count = 32
+
+    mcas = DDC(_struck_mca_records('Mca:{}', range(1, mca_count + 1)))
+
+    acquire_mode = Cpt(EpicsSignal, 'AcquireMode')
+    acquiring = Cpt(EpicsSignal, 'Acquiring')
+    asyn = Cpt(EpicsSignal, 'Asyn')
+    channel1_source = Cpt(EpicsSignal, 'Channel1Source')
+    channel_advance = Cpt(EpicsSignal, 'ChannelAdvance')
+    client_wait = Cpt(EpicsSignal, 'ClientWait')
+    count_on_start = Cpt(EpicsSignal, 'CountOnStart')
+    current_channel = Cpt(EpicsSignal, 'CurrentChannel')
+    disable_auto_count = Cpt(EpicsSignal, 'DisableAutoCount')
+    do_read_all = Cpt(EpicsSignal, 'DoReadAll')
+    dwell = Cpt(EpicsSignal, 'Dwell')
+    elapsed_real = Cpt(EpicsSignal, 'ElapsedReal')
+    enable_client_wait = Cpt(EpicsSignal, 'EnableClientWait')
+    erase_all = Cpt(EpicsSignal, 'EraseAll')
+    erase_start = Cpt(EpicsSignal, 'EraseStart')
+    firmware = Cpt(EpicsSignal, 'Firmware')
+    hardware_acquiring = Cpt(EpicsSignal, 'HardwareAcquiring')
+    input_mode = Cpt(EpicsSignal, 'InputMode')
+    max_channels = Cpt(EpicsSignal, 'MaxChannels')
+    model = Cpt(EpicsSignal, 'Model')
+    mux_output = Cpt(EpicsSignal, 'MUXOutput')
+    nuse_all = Cpt(EpicsSignal, 'NuseAll')
+    output_mode = Cpt(EpicsSignal, 'OutputMode')
+    output_polarity = Cpt(EpicsSignal, 'OutputPolarity')
+    prescale = Cpt(EpicsSignal, 'Prescale')
+    preset_real = Cpt(EpicsSignal, 'PresetReal')
+    read_all = Cpt(EpicsSignal, 'ReadAll')
+    read_all_once = Cpt(EpicsSignal, 'ReadAllOnce')
+    set_acquiring = Cpt(EpicsSignal, 'SetAcquiring')
+    set_client_wait = Cpt(EpicsSignal, 'SetClientWait')
+    snl_connected = Cpt(EpicsSignal, 'SNL_Connected')
+    software_channel_advance = Cpt(EpicsSignal, 'SoftwareChannelAdvance')
+    start_all = Cpt(EpicsSignal, 'StartAll')
+    stop_all = Cpt(EpicsSignal, 'StopAll')
+    user_led = Cpt(EpicsSignal, 'UserLED')
+    wfrm = Cpt(EpicsSignal, 'Wfrm')
+
+
+class HxnScaler(EpicsScaler):
+    struck = Cpt(StruckScaler, '')
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        # Scaler 1 should be in output mode 1 to properly trigger
+        self.stage_sigs[self.struck.output_mode] = 'Mode 1'
+        # Ensure that the scaler isn't counting in mcs mode for any reason
+        self.stage_sigs[self.struck.stop_all] = 1
