@@ -28,17 +28,6 @@ class MasterDetector(object):
     def trigger(self, *args, **kwargs):
         return self._master.trigger(*args, **kwargs)
 
-    def configure(self, state=None):
-        # TODO not sure how state should work here
-        self._master.configure(state=state)
-        for slave in self._slaves:
-            slave.configure(state={})
-
-    def deconfigure(self):
-        self._master.deconfigure()
-        for slave in self._slaves:
-            slave.deconfigure()
-
     @property
     def master(self):
         return self._master
@@ -100,11 +89,21 @@ class MasterDetector(object):
     def __contains__(self, slave):
         return slave in self._slaves
 
-    def set(self, *args, **kwargs):
-        '''Set detector parameters from bluesky'''
+    def configure(self, *args, **kwargs):
+        '''Configure detector parameters from bluesky'''
         for det in self.all_detectors:
-            if hasattr(det, 'set'):
-                det.set(*args, master=self, **kwargs)
+            if hasattr(det, 'configure'):
+                det.configure(*args, master=self, **kwargs)
+
+    def stage(self):
+        self._master.stage()
+        for slave in self._slaves:
+            slave.stage()
+
+    def stage(self):
+        self._master.unstage()
+        for slave in self._slaves:
+            slave.unstage()
 
     def __repr__(self):
         return ('{0.__class__.__name__}({0.master}, slaves={0.slaves}, '

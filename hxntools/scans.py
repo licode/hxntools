@@ -31,26 +31,17 @@ def get_next_scan_id():
     return new_id
 
 
-def check_scaler():
-    if scaler1_output_mode.get(as_string=True) != 'Mode 1':
-        logger.info('Setting scaler 1 to output mode 1')
-        scaler1_output_mode.put('Mode 1')
-
-    # Ensure that the scaler isn't counting in mcs mode for any reason
-    scaler1_stopall.put(1)
-
-
 def scan_setup(detectors, total_points):
-    check_scaler()
     for det in detectors:
-        if not hasattr(det, 'set'):
+        if not hasattr(det, 'configure'):
             continue
 
         if isinstance(det, (EpicsSignal, Positioner)):
             logger.debug('Skipping detector %s', det)
             continue
         logger.debug('Setting up detector %s', det)
-        yield Msg('set', det, scan_type='step_scan', total_points=total_points)
+        yield Msg('configure', det, scan_type='step_scan',
+                  total_points=total_points)
 
 
 class HxnScanMixin1D:
