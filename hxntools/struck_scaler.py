@@ -1,25 +1,32 @@
 import collections
 from ophyd import (EpicsScaler, Device,
                    Component as Cpt, DynamicDeviceComponent as DDC,
-                   EpicsMCA, EpicsSignal, EpicsSignalRO)
+                   EpicsSignal, EpicsSignalRO, Signal)
+from ophyd.mca import EpicsMCARecord
 
 
-class StruckMCA(EpicsMCA):
+class StruckMCA(EpicsMCARecord):
     def __init__(self, prefix, *, index=None, **kwargs):
         self.index = index
         super().__init__(prefix, **kwargs)
+
+    def stop(self):
+        pass
 
 
 def _struck_mca_records(prefix_format, range_):
     recs = collections.OrderedDict()
 
-    for i in range(1, count):
+    for i in range_:
         attr = 'mca{:02d}'.format(i)
         mca_prefix = prefix_format.format(i)
         recs[attr] = (StruckMCA, mca_prefix, dict(index=i))
 
+    recs['mca_attrs'] = (Signal, None, dict(value=tuple(recs.keys())))
+    return recs
 
-class StruckScaler(Device):
+
+class StruckScaler(EpicsScaler):
     mca_count = 32
 
     mcas = DDC(_struck_mca_records('Mca:{}', range(1, mca_count + 1)))
@@ -61,14 +68,20 @@ class StruckScaler(Device):
     user_led = Cpt(EpicsSignal, 'UserLED')
     wfrm = Cpt(EpicsSignal, 'Wfrm')
 
+    def __init__(self, prefix, **kwargs):
+        super().__init__(prefix, **kwargs)
 
-class HxnScaler(EpicsScaler):
-    struck = Cpt(StruckScaler, '')
+        mca_attrs = self.mcas.mca_attrs.get()
+        self.mca_by_index = {getattr(self.mcas, attr).index: getattr(self.mcas,
+                                                                     attr)
+                             for attr in mca_attrs}
 
+
+class HxnScaler(StruckScaler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         # Scaler 1 should be in output mode 1 to properly trigger
-        self.stage_sigs[self.struck.output_mode] = 'Mode 1'
+        self.stage_sigs[self.output_mode] = 'Mode 1'
         # Ensure that the scaler isn't counting in mcs mode for any reason
-        self.stage_sigs[self.struck.stop_all] = 1
+        self.stage_sigs[self.stop_all] = 1
