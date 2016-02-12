@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 #         plugin.file_write_mode.put(2)  # <-- 'stream' here, 'single' on mixin
 
 
-class MerlinTIFFPlugin(FileStoreTIFF, FileStoreBulkReadable, TIFFPlugin):
+class MerlinTIFFPlugin(FileStoreBulkReadable, FileStoreTIFF, TIFFPlugin):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.cam = self.parent.cam
@@ -36,7 +36,6 @@ class MerlinTIFFPlugin(FileStoreTIFF, FileStoreBulkReadable, TIFFPlugin):
         # super().mode_internal(scan_type=scan_type) # <- no super implementation
         logger.info('%s internal triggering (scan_type=%s)', self.name,
                     scan_type)
-
 
     def mode_external(self, scan_type=None):
         # super().mode_external(scan_type=scan_type) # <- no super implementation

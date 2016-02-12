@@ -1,13 +1,15 @@
+import os
 import time as ttime
 import logging
-import itertools
+# import itertools
 import uuid
 
 from ophyd.device import (DeviceStatus, BlueskyInterface, Staged)
-from ophyd.utils import set_and_wait
+# from ophyd.utils import set_and_wait
 from ophyd.areadetector.filestore_mixins import FileStoreIterativeWrite
 
 from filestore.commands import bulk_insert_datum
+from .utils import makedirs
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +19,7 @@ class TriggerBase(BlueskyInterface):
         super().__init__(*args, **kwargs)
 
         self.stage_sigs.update([(self.cam.acquire, 0),  # If acquiring, stop.
-                                (self.cam.image_mode, 'Multiple'),  # 'Multiple' mode
+                                (self.cam.image_mode, 'Multiple'),
                                 ])
 
         self._status = None
@@ -50,8 +52,8 @@ class HxnModalTrigger(TriggerBase):
     def _count_time_set(self, count_time):
         pass
 
-    def set(self, *, total_points=0, external_trig=False, master=None,
-            scan_type=None):
+    def configure(self, *, total_points=0, external_trig=False, master=None,
+                  scan_type=None):
         self._master = master
         self._total_points = total_points
         self._external_trig = bool(external_trig)
@@ -129,7 +131,19 @@ class HxnModalTrigger(TriggerBase):
 
 class FileStoreBulkReadable(FileStoreIterativeWrite):
     def __init__(self, *args, **kwargs):
+        self._write_path_template = None
         super().__init__(*args, **kwargs)
+
+    def make_filename(self):
+        fn, read_path, write_path = super().make_filename()
+
+        # tag on a portion of the hash to reduce the number of files in one directory
+        hash_portion = fn[:5]
+        read_path = os.path.join(read_path, hash_portion, '')
+        write_path = os.path.join(write_path, hash_portion, '')
+
+        makedirs(read_path, mode=0o777)
+        return fn, read_path, write_path
 
     def bulk_read(self, timestamps):
         # TODO update
