@@ -5,6 +5,24 @@ from ophyd import (EpicsScaler, Device,
 from ophyd.mca import EpicsMCARecord
 
 
+class MinimalCalcRecord(Device):
+    value = Cpt(EpicsSignal, '.VAL')
+    equation = Cpt(EpicsSignal, '.CALC$', string=True)
+
+
+def _scaler_calc_records(suffix_format='', range_=None):
+    if range_ is None:
+        range_ = range(1, 9)
+
+    recs = collections.OrderedDict()
+
+    for i in range_:
+        attr = 'calc{}'.format(i)
+        recs[attr] = (MinimalCalcRecord, suffix_format.format(i), {})
+
+    return recs
+
+
 class StruckMCA(EpicsMCARecord):
     def __init__(self, prefix, *, index=None, **kwargs):
         self.index = index
@@ -26,7 +44,12 @@ def _struck_mca_records(prefix_format, range_):
     return recs
 
 
-class StruckScaler(EpicsScaler):
+class EpicsScalerWithCalc(EpicsScaler):
+    calculations = DDC(_scaler_calc_records('_calc{}', range(1, 9)))
+    enable_calculations = Cpt(EpicsSignal, '_calcEnable')
+
+
+class StruckScaler(EpicsScalerWithCalc):
     mca_count = 32
 
     mcas = DDC(_struck_mca_records('Mca:{}', range(1, mca_count + 1)))
