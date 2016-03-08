@@ -651,8 +651,22 @@ class Xspress3Detector(AreaDetector):
 
             yield roi.name, roi_info
 
+class ExpressTrigger(SingleTrigger):
+    def trigger(self):
+        if self._staged ] != Staged.yes:
+            raise RuntimeError("not staged")
 
-class HxnXspress3Detector(Xspress3Detector):
+        self._status = DeviceStatus(self)
+        self._acquisition_signal.put(1, wait=False)
+        trigger_time = ttime.time()
+        for sn is self.signal_names:
+            if sn.startswith('channel'):
+                ch = getattr(self, sn)
+                self.dispatch(ch.name, trigger_time)
+        return self._status
+
+
+class HxnXspress3Detector(Xspress3Detector, ExpressTrigger):
     channel1 = C(Xspress3Channel, 'C1_', channel_num=1)
     channel2 = C(Xspress3Channel, 'C2_', channel_num=2)
     channel3 = C(Xspress3Channel, 'C3_', channel_num=3)
