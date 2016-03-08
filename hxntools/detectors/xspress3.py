@@ -1,4 +1,4 @@
-from __future__ import print_function
+from __future__ import print_function, division
 import time
 import logging
 
@@ -18,8 +18,9 @@ from ophyd import (Signal, EpicsSignal, EpicsSignalRO)
 from ophyd import (Device, Component as C, FormattedComponent as FC,
                    DynamicDeviceComponent as DDC)
 from ophyd.areadetector.plugins import PluginBase
-from ophyd.areadetector.filestore_mixins import (FileStoreBase, new_uid)
+from ophyd.areadetector.filestore_mixins import (FileStorePluginBase, new_uid)
 from ophyd.areadetector.trigger_mixins import (TriggerBase, SingleTrigger)
+from ophyd.areadetector.plugins import HDF5Plugin
 
 from ..handlers import Xspress3HDF5Handler
 from ..handlers.xspress3 import XRF_DATA_KEY
@@ -27,207 +28,211 @@ from ..handlers.xspress3 import XRF_DATA_KEY
 logger = logging.getLogger(__name__)
 
 
-# class Xspress3FileStore(AreaDetectorFileStore):
-#     '''Xspress3 acquisition -> filestore'''
-#
-#     def __init__(self, det, basename, file_template='%s%s_%6.6d.h5',
-#                  config_time=0.5,
-#                  mds_key_format='{self._det.name}_ch{chan}',
-#                  **kwargs):
-#         super().__init__(basename, cam='', reset_acquire=False,
-#                          use_image_mode=False, **kwargs)
-#
-#         self._det = det
-#         # Use the EpicsSignal file_template from the detector
-#         self._file_template = det.hdf5.file_template
-#         # (_file_template is used in _make_filename, etc)
-#         self.file_template = file_template
-#         self._filestore_res = None
-#         self.channels = list(range(1, det.num_channels + 1))
-#         self._total_points = None
-#         self._master = None
-#         self._external_trig = None
-#         self._config_time = config_time
-#         self.mds_keys = {chan: mds_key_format.format(self=self, chan=chan)
-#                          for chan in self.channels}
-#         self._file_plugin = None
-#
-#     def _get_datum_args(self, seq_num):
-#         for chan in self.channels:
-#             yield {'frame': seq_num, 'channel': chan}
-#
-#     def read(self):
-#         timestamp = time.time()
-#         uids = [str(uuid.uuid4()) for ch in self.channels]
-#
-#         bulk_insert_datum(self._filestore_res, uids,
-#                           self._get_datum_args(self._abs_trigger_count))
-#
-#         self._abs_trigger_count += 1
-#         return {self.mds_keys[ch]: {'timestamp': timestamp,
-#                                     'value': uid,
-#                                     }
-#                 for uid, ch in zip(uids, self.channels)
-#                 }
-#
-#     def bulk_read(self, timestamps):
-#         channels = self.channels
-#         ch_uids = {ch: [str(uuid.uuid4()) for ts in timestamps]
-#                    for ch in channels}
-#
-#         count = len(timestamps)
-#         if count == 0:
-#             return {}
-#
-#         def get_datum_args():
-#             for ch in channels:
-#                 for seq_num in range(count):
-#                     yield {'frame': seq_num,
-#                            'channel': ch}
-#
-#         uids = [ch_uids[ch] for ch in channels]
-#         bulk_insert_datum(self._filestore_res, itertools.chain(*uids),
-#                           get_datum_args())
-#
-#         return {self.mds_keys[ch]: ch_uids[ch]
-#                 for ch in channels
-#                 }
-#
-#     def _make_filename(self, **kwargs):
-#         super()._make_filename(**kwargs)
-#
-#         makedirs(self._store_file_path)
-#
-#     def deconfigure(self, *args, **kwargs):
-#         # self._det.hdf5.capture.put(0)
-#         try:
-#             i = 0
-#             while self._det.hdf5.capture.value == 1:
-#                 i += 1
-#                 if (i % 50) == 0:
-#                     logger.warning('Still capturing data .... waiting.')
-#                 time.sleep(0.1)
-#         except KeyboardInterrupt:
-#             logger.warning('Still capturing data .... interrupted.')
-#
-#         self._det.trigger_mode.put('Internal')
-#         self._total_points = None
-#         self._master = None
-#
-#         # TODO
-#         self._old_image_mode = self._image_mode.value
-#         self._old_acquire = self._acquire.value
-#
-#         super().deconfigure()
-#
-#     def set(self, total_points=0, master=None, external_trig=False,
-#             **kwargs):
-#         self._total_points = total_points
-#         self._master = master
-#         self._external_trig = external_trig
-#
-#     def configure(self, state=None):
-#         ext_trig = (self._master is not None or self._external_trig)
-#
-#         logger.debug('Stopping xspress3 acquisition')
-#         self._det.acquire.put(0)
-#
-#         time.sleep(0.1)
-#
-#         if ext_trig:
-#             logger.debug('Setting up external triggering')
-#             self._det.trigger_mode.put('TTL Veto Only')
-#             if self._total_points is None:
-#                 raise RuntimeError('set was not called on this detector')
-#
-#             self._det.num_images.put(self._total_points)
-#         else:
-#             logger.debug('Setting up internal triggering')
-#             self._det.trigger_mode.put('Internal')
-#             self._det.num_images.put(1)
-#
-#         logger.debug('Configuring other filestore stuff')
-#         super(Xspress3FileStore, self).configure(state=state)
-#
-#         logger.debug('Making the filename')
-#         self._make_filename(seq=0)
-#
-#         logger.debug('Setting up hdf5 plugin: ioc path: %s filename: %s',
-#                      self._ioc_file_path, self._filename)
-#         self._det.hdf5.file_template.put(self.file_template, wait=True)
-#         self._det.hdf5.file_number.put(0)
-#         self._det.hdf5.blocking_callbacks.put(1)
-#         self._det.hdf5.enable.put(1)
-#         self._det.hdf5.file_path.put(self._ioc_file_path, wait=True)
-#         self._det.hdf5.file_name.put(self._filename, wait=True)
-#
-#         if not self._det.hdf5.file_path_exists.value:
-#             raise IOError("Path {} does not exits on IOC!! Please Check"
-#                           .format(self._det.hdf5.file_path.value))
-#
-#         logger.debug('Inserting the filestore resource')
-#         self._filestore_res = self._insert_fs_resource()
-#
-#         logger.debug('Erasing old spectra')
-#         self._det.xs_erase.put(1)
-#         self._det.hdf5.capture.put(1, wait=False)
-#
-#         if ext_trig:
-#             logger.debug('Starting acquisition (waiting for triggers)')
-#             self._det.acquire.put(1, wait=False)
-#
-#         # Xspress3 needs a bit of time to configure itself...
-#         time.sleep(self._config_time)
-#
-#     @property
-#     def count_time(self):
-#         return self._det.acquire_period.value
-#
-#     @count_time.setter
-#     def count_time(self, val):
-#         self._det.acquire_period.put(val)
-#
-#     def acquire(self, **kwargs):
-#         status = DetectorStatus(self)
-#         status._finished()
-#         # scaler/zebra take care of timing
-#         return status
-#
-#     def describe(self):
-#         # TODO: describe is called prior to configure, so the filestore
-#         #       resource
-#         #       is not yet generated
-#         size = (self._det.hdf5.width.value, )
-#
-#         spec_desc = {'external': 'FILESTORE:',
-#                      'dtype': 'array',
-#                      'shape': size,
-#                      }
-#
-#         if self._filestore_res is not None:
-#             source = 'FileStore:{0.id!s}'.format(self._filestore_res)
-#         else:
-#             source = 'FileStore:'
-#
-#         spec_desc['source'] = source
-#
-#         desc = {}
-#         for chan in self.channels:
-#             desc['{}_ch{}'.format(self._det.name, chan)] = spec_desc
-#
-#         return desc
-#
-#     def _insert_fs_resource(self):
-#         return fs_api.insert_resource(Xspress3HDF5Handler.HANDLER_NAME,
-#                                       self.store_filename, {})
-#
-#     @property
-#     def store_filename(self):
-#         return self._store_filename
-#
-#     @property
-#     def ioc_filename(self):
-#         return self._ioc_filename
+class PermissiveGetSignal(Signal):
+    def get(self, use_monitor=None):
+        return super().get()
+
+
+class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
+    '''Xspress3 acquisition -> filestore'''
+
+    def __init__(self, det, basename, file_template='%s%s_%6.6d.h5',
+                 config_time=0.5,
+                 mds_key_format='{self._det.name}_ch{chan}',
+                 **kwargs):
+        super().__init__(basename, cam='', reset_acquire=False,
+                         use_image_mode=False, **kwargs)
+
+        self._det = det
+        # Use the EpicsSignal file_template from the detector
+        self._file_template = det.hdf5.file_template
+        # (_file_template is used in _make_filename, etc)
+        self.file_template = file_template
+        self._filestore_res = None
+        self.channels = list(range(1, det.num_channels + 1))
+        self._total_points = None
+        self._master = None
+        self._external_trig = None
+        self._config_time = config_time
+        self.mds_keys = {chan: mds_key_format.format(self=self, chan=chan)
+                         for chan in self.channels}
+        self._file_plugin = None
+
+    def _get_datum_args(self, seq_num):
+        for chan in self.channels:
+            yield {'frame': seq_num, 'channel': chan}
+
+    def read(self):
+        timestamp = time.time()
+        uids = [str(uuid.uuid4()) for ch in self.channels]
+
+        bulk_insert_datum(self._filestore_res, uids,
+                          self._get_datum_args(self._abs_trigger_count))
+
+        self._abs_trigger_count += 1
+        return {self.mds_keys[ch]: {'timestamp': timestamp,
+                                    'value': uid,
+                                    }
+                for uid, ch in zip(uids, self.channels)
+                }
+
+    def kickoff(self):
+        # TODO
+        raise NotImplementedError()
+
+    def collect(self):
+        # TODO
+        raise NotImplementedError()
+        channels = self.channels
+        ch_uids = {ch: [str(uuid.uuid4()) for ts in timestamps]
+                   for ch in channels}
+
+        count = len(timestamps)
+        if count == 0:
+            return {}
+
+        def get_datum_args():
+            for ch in channels:
+                for seq_num in range(count):
+                    yield {'frame': seq_num,
+                           'channel': ch}
+
+        uids = [ch_uids[ch] for ch in channels]
+        bulk_insert_datum(self._filestore_res, itertools.chain(*uids),
+                          get_datum_args())
+
+        return {self.mds_keys[ch]: ch_uids[ch]
+                for ch in channels
+                }
+
+    def make_filename(self):
+        fn, rp, write_path = super().make_filename()
+
+        makedirs(write_path)
+        return fn, rp, write_path
+
+    def unstage(self):
+        # self._det.hdf5.capture.put(0)
+        try:
+            i = 0
+            while self.capture.value == 1:
+                i += 1
+                if (i % 50) == 0:
+                    logger.warning('Still capturing data .... waiting.')
+                time.sleep(0.1)
+        except KeyboardInterrupt:
+            logger.warning('Still capturing data .... interrupted.')
+
+        return super().unstage()
+
+    def stage(self, state=None):
+        # if should external trigger
+        ext_trig = self._det.external_trig.get()
+        # TODO check self._master / self.master.get()?
+
+        logger.debug('Stopping xspress3 acquisition')
+        # really force it to stop acquiring
+        self._det.acquire.put(0, wait=True)
+
+
+        if ext_trig:
+            logger.debug('Setting up external triggering')
+            # self._det.trigger_mode.put('TTL Veto Only')
+            self.stage_sigs[self._det.trigger_mode] = 'TTL Veto Only'
+            # if self._total_points is None:
+            #     raise RuntimeError('configure was not called on this detector')
+            # total_points = self._det.total_points.get()
+            # self._det.num_images.put(self._total_points)
+            if total_points is None:
+                raise RuntimeError('configure was not called on this detector')
+            self.stage_sigs[self._det.num_images] = total_points
+
+        else:
+            logger.debug('Setting up internal triggering')
+            # self._det.trigger_mode.put('Internal')
+            # self._det.num_images.put(1)
+            self.stage_sigs[self._det.trigger_mode] = 'Internal'
+            self.stage_sigs[self._det.num_images] = 1
+
+        logger.debug('Configuring other filestore stuff')
+
+        logger.debug('Making the filename')
+        filename, read_path, write_path = self._make_filename(seq=0)
+
+        logger.debug('Setting up hdf5 plugin: ioc path: %s filename: %s',
+                     self._ioc_file_path, self._filename)
+        self.stage_sigs[self.file_template] = self.file_template
+        self.stage_sigs[self.blocking_callbacks] = 1
+        self.stage_sigs[self.enable] = 1
+
+        if not self._det.hdf5.file_path_exists.value:
+            raise IOError("Path {} does not exits on IOC!! Please Check"
+                          .format(self._det.hdf5.file_path.value))
+
+        logger.debug('Erasing old spectra')
+        self.stage_sigs[self._det.xs_erase] = 1
+        self.stage_sigs[self.capture] = 1
+
+        if ext_trig:
+            logger.debug('Starting acquisition (waiting for triggers)')
+            self.stage_sigs[self._det.acquire] = 1
+
+        # actually run everything
+        ret = super.stage()
+        logger.debug('Inserting the filestore resource')
+        self._filestore_res = fs_api.insert_resource(
+            Xspress3HDF5Handler.HANDLER_NAME, self._fn, {})
+
+        # Xspress3 needs a bit of time to configure itself...
+        time.sleep(self._config_time)
+        return ret
+
+    def configure(self, total_points=0, master=None, external_trig=False,
+            **kwargs):
+        self._total_points = total_points
+        self._master = master
+        self._external_trig = external_trig
+
+    @property
+    def count_time(self):
+        return self._det.acquire_period.value
+
+    @count_time.setter
+    def count_time(self, val):
+        self._det.acquire_period.put(val)
+
+    def acquire(self, **kwargs):
+        status = DetectorStatus(self)
+        status._finished()
+        # scaler/zebra take care of timing
+        return status
+
+    def describe(self):
+        # TODO: describe is called prior to configure, so the filestore
+        #       resource
+        #       is not yet generated
+        size = (self._det.hdf5.width.value, )
+
+        spec_desc = {'external': 'FILESTORE:',
+                     'dtype': 'array',
+                     'shape': size,
+                     }
+
+        if self._filestore_res is not None:
+            source = 'FileStore:{0.id!s}'.format(self._filestore_res)
+        else:
+            source = 'FileStore:'
+
+        spec_desc['source'] = source
+
+        desc = {}
+        for chan in self.channels:
+            desc['{}_ch{}'.format(self._det.name, chan)] = spec_desc
+
+        return desc
+
+    def _insert_fs_resource(self, ):
+        return
 
 
 class Xspress3ExternalTrigger(SingleTrigger):
@@ -651,6 +656,17 @@ class HxnXspress3Detector(Xspress3Detector):
     channel1 = C(Xspress3Channel, 'C1_', channel_num=1)
     channel2 = C(Xspress3Channel, 'C2_', channel_num=2)
     channel3 = C(Xspress3Channel, 'C3_', channel_num=3)
+
+    external_trig = Cpt(PermissiveGetSignal, None, add_prefix=(),
+                        value=False)
+
+    total_points = Cpt(PermissiveGetSignal, None, add_prefix=(),
+                       value=None)
+
+    def __init__(self, *args, configuration_attrs=None, **kwargs):
+        if configuration_attrs is None:
+            configuration_attrs = ['external_trig']
+        super.__init__(*args, configuration_attrs=None, **kwargs)
 
     # Currently only using three channels. Uncomment these to enable more
     # channels:
