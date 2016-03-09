@@ -2,12 +2,13 @@ from __future__ import print_function, division
 import time
 import time as ttime
 import logging
+import itertools
 import uuid
 
 # import itertools
 import filestore.api as fs_api
 from filestore.commands import bulk_insert_datum
-# from .utils import makedirs
+from .utils import makedirs
 
 from collections import OrderedDict
 
@@ -26,7 +27,6 @@ from ophyd.areadetector.plugins import HDF5Plugin
 from ophyd.device import BlueskyInterface, Staged, Component as Cpt
 from ophyd.ophydobj import DeviceStatus
 
-from .utils import makedirs
 from ..handlers import Xspress3HDF5Handler
 from ..handlers.xspress3 import XRF_DATA_KEY
 
@@ -100,10 +100,8 @@ class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
         det = parent
         self._det = det.cam
         # Use the EpicsSignal file_template from the detector
-        self.stage_sigs[self.auto_save] = 'No'
-
-        # TODO remove this
-        self.stage_sigs.clear()
+        self.stage_sigs[self.blocking_callbacks] = 1
+        self.stage_sigs[self.enable] = 1
 
         self._filestore_res = None
         self.channels = list(range(1, len([_ for _ in det.signal_names
@@ -113,6 +111,8 @@ class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
         self._master = None
 
         self._config_time = config_time
+        self.mds_keys = {chan: mds_key_format.format(self=self, chan=chan)
+                         for chan in self.channels}
 
     def _get_datum_args(self, seq_num):
         for chan in self.channels:
@@ -140,6 +140,7 @@ class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
         # TODO
         raise NotImplementedError()
         channels = self.channels
+        timestamps = None  # TODO TAC
         ch_uids = {ch: [str(uuid.uuid4()) for ts in timestamps]
                    for ch in channels}
 
@@ -181,7 +182,7 @@ class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
                 time.sleep(0.1)
                 if i > 150:
                     logger.warning('Still capturing data .... giving up.')
-                    self._det.hdf5.capture.put(0)
+                    self.capture.put(0)
                     break
 
         except KeyboardInterrupt:
@@ -201,6 +202,13 @@ class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
         total_points = self._det.parent.total_points.get()
         spec_per_point = self._det.parent.spectrum_per_point.get()
         total_capture = total_points * spec_per_point
+
+        # re-order the stage signals and disable the calc record which is
+        # interfering with the capture count
+        self.stage_sigs.pop(self.num_capture, None)
+        self.stage_sigs.pop(self._det.num_images, None)
+        self.stage_sigs[self._det.xs_hdf_num_capture_calc_disable] = 1
+
         if ext_trig:
             # TODO some self._master logic went here?
             logger.debug('Setting up external triggering')
@@ -210,7 +218,6 @@ class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
             if total_points is None:
                 raise RuntimeError('configure was not called on this detector')
             self.stage_sigs[self._det.num_images] = total_capture
-
         else:
             logger.debug('Setting up internal triggering')
             # self._det.trigger_mode.put('Internal')
@@ -218,6 +225,7 @@ class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
             self.stage_sigs[self._det.trigger_mode] = 'Internal'
             self.stage_sigs[self._det.num_images] = spec_per_point
 
+        self.stage_sigs[self.auto_save] = 'No'
         logger.debug('Configuring other filestore stuff')
 
         logger.debug('Making the filename')
@@ -225,10 +233,6 @@ class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
 
         logger.debug('Setting up hdf5 plugin: ioc path: %s filename: %s',
                      write_path, filename)
-
-        # TODO can we uncomment these?
-        # self.stage_sigs[self.blocking_callbacks] = 1
-        # self.stage_sigs[self.enable] = 1
 
         if not self._det.parent.hdf5.file_path_exists.value:
             raise IOError("Path {} does not exits on IOC!! Please Check"
@@ -320,6 +324,7 @@ class Xspress3DetectorCam(Device):
     xs_frame_count = C(EpicsSignalRO, 'FRAME_COUNT_RBV')
     xs_hdf_capture = C(EpicsSignalRO, 'HDF5:Capture_RBV')
     xs_hdf_num_capture_calc = C(EpicsSignal, 'HDF5:NumCapture_CALC')
+    xs_hdf_num_capture_calc_disable = C(EpicsSignal, 'HDF5:NumCapture_CALC.DISA')
     xs_invert_f0 = C(SignalWithRBV, 'INVERT_F0')
     xs_invert_veto = C(SignalWithRBV, 'INVERT_VETO')
     xs_max_frames = C(EpicsSignalRO, 'MAX_FRAMES_RBV')
