@@ -264,7 +264,7 @@ class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
                      }
         # shouldn't the source be the array PV?
         if self._filestore_res is not None:
-            source = 'FileStore::{0.id!s}'.format(self._filestore_res)
+            source = 'FileStore::{!s}'.format(self._filestore_res['id'])
         else:
             source = 'FileStore:'
 
