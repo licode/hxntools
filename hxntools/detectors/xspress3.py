@@ -356,8 +356,7 @@ class Xspress3ROI(Device):
                 read_attrs = ['value', 'value_sum']
 
         if configuration_attrs is None:
-            # configuration_attrs = ['ev_low', 'ev_high', 'enable']
-            configuration_attrs = ['enable']
+            configuration_attrs = ['ev_low', 'ev_high', 'enable']
 
         rois = parent
         channel = rois.parent
