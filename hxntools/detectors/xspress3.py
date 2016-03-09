@@ -660,7 +660,7 @@ class Xspress3Detector(DetectorBase):
             yield roi.name, roi_info
 
 
-class XSPressTrigger(BlueskyInterface):
+class XspressTrigger(BlueskyInterface):
     """Base class for trigger mixin classes
 
     Subclasses must define a method with this signature:
@@ -706,7 +706,7 @@ class XSPressTrigger(BlueskyInterface):
         return self._status
 
 
-class HxnXspress3Detector(XSPressTrigger, Xspress3Detector):
+class HxnXspress3Detector(XspressTrigger, Xspress3Detector):
     channel1 = C(Xspress3Channel, 'C1_', channel_num=1)
     channel2 = C(Xspress3Channel, 'C2_', channel_num=2)
     channel3 = C(Xspress3Channel, 'C3_', channel_num=3)
