@@ -88,6 +88,7 @@ class PermissiveGetSignal(Signal):
 
 class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
     '''Xspress3 acquisition -> filestore'''
+    make_directories = Cpt(Signal, value=False)
 
     def __init__(self, basename,
                  config_time=0.5,
@@ -165,8 +166,8 @@ class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
     def make_filename(self):
         fn, rp, write_path = super().make_filename()
 
-        makedirs(write_path)
-
+        if self.make_directories.get():
+            makedirs(write_path)
         return fn, rp, write_path
 
     def unstage(self):
