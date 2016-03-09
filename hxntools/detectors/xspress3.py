@@ -460,7 +460,8 @@ def make_rois(rois):
 
         # AreaDetector NDPluginAttribute information
         attr = 'ad_attr{:02d}'.format(roi)
-        defn[attr] = (Xspress3ROISettings, 'ROI{}:'.format(roi), {})
+        defn[attr] = (Xspress3ROISettings, 'ROI{}:'.format(roi),
+                      dict(read_attrs=[]))
         # e.g., device.rois.roi01 = Xspress3ROI('ROI1:', roi_num=1)
 
         # TODO: 'roi01' and 'ad_attr_01' have the same prefix and could
@@ -720,14 +721,15 @@ class HxnXspress3Detector(XSPressTrigger, Xspress3Detector):
 
     hdf5 = Cpt(Xspress3FileStore, 'HDF5:', write_path_template='/epics/data/')
 
-    def __init__(self, *args, configuration_attrs=None, read_attrs=None,
+    def __init__(self, prefix, *, configuration_attrs=None, read_attrs=None,
                  **kwargs):
         if configuration_attrs is None:
             configuration_attrs = ['external_trig', 'total_points',
                                    'spectrum_per_point']
         if read_attrs is None:
             read_attrs = ['channel1', 'channel2', 'channel3', 'hdf5']
-        super().__init__(*args, configuration_attrs=None, **kwargs)
+        super().__init__(prefix, configuration_attrs=configuration_attrs,
+                         read_attrs=read_attrs, **kwargs)
 
     # Currently only using three channels. Uncomment these to enable more
     # channels:
