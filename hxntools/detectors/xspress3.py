@@ -8,7 +8,7 @@ import uuid
 # import itertools
 import filestore.api as fs_api
 from filestore.commands import bulk_insert_datum
-from .utils import makedirs
+from .utils import (makedirs, DerivedSignal)
 
 from collections import OrderedDict
 
@@ -41,23 +41,6 @@ def ev_to_bin(ev):
 def bin_to_ev(bin_):
     '''Convert bin number to eV'''
     return int(bin_) * 10
-
-
-class DerivedSignal(Signal):
-    '''A signal which is derived from another one'''
-    def __init__(self, derived_from, **kwargs):
-        self._derived_from = derived_from
-        super().__init__(**kwargs)
-
-    def describe(self):
-        desc = self._derived_from.describe()[self._derived_from.name]
-        return {self.name: desc}
-
-    def get(self, **kwargs):
-        return self._derived_from.get(**kwargs)
-
-    def put(self, value, **kwargs):
-        return self._derived_from.put(value, **kwargs)
 
 
 class EvSignal(DerivedSignal):
