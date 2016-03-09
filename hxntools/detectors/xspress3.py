@@ -13,25 +13,72 @@ from collections import OrderedDict
 
 import h5py
 
-from ophyd.areadetector import (AreaDetector, CamBase,
+from ophyd.areadetector import (DetectorBase,
                                 EpicsSignalWithRBV as SignalWithRBV)
 from ophyd import (Signal, EpicsSignal, EpicsSignalRO)
 
 from ophyd import (Device, Component as C, FormattedComponent as FC,
                    DynamicDeviceComponent as DDC)
 from ophyd.areadetector.plugins import PluginBase
-from ophyd.areadetector.filestore_mixins import (FileStorePluginBase, new_uid)
-from ophyd.areadetector.trigger_mixins import (TriggerBase, SingleTrigger)
+from ophyd.areadetector.filestore_mixins import FileStorePluginBase
+
 from ophyd.areadetector.plugins import HDF5Plugin
 from ophyd.device import BlueskyInterface, Staged, Component as Cpt
 from ophyd.ophydobj import DeviceStatus
-from ophyd.areadetector.base import (ADBase, ADComponent as C, ad_group,
-                   EpicsSignalWithRBV as SignalWithRBV)
+
 from .utils import makedirs
 from ..handlers import Xspress3HDF5Handler
 from ..handlers.xspress3 import XRF_DATA_KEY
 
 logger = logging.getLogger(__name__)
+
+
+def ev_to_bin(ev):
+    '''Convert eV to bin number'''
+    return int(ev / 10)
+
+
+def bin_to_ev(bin_):
+    '''Convert bin number to eV'''
+    return int(bin_) * 10
+
+
+class DerivedSignal(Signal):
+    '''A signal which is derived from another one'''
+    def __init__(self, derived_from, **kwargs):
+        self._derived_from = derived_from
+        super().__init__(**kwargs)
+
+    def describe(self):
+        desc = self._derived_from.describe()[self._derived_from.name]
+        return {self.name: desc}
+
+    def get(self, **kwargs):
+        return self._derived_from.get(**kwargs)
+
+    def put(self, value, **kwargs):
+        return self._derived_from.put(value, **kwargs)
+
+
+class EvSignal(DerivedSignal):
+    '''A signal that converts a bin number into electron volts'''
+    def __init__(self, parent_attr, *, parent=None, **kwargs):
+        bin_signal = getattr(parent, parent_attr)
+        super().__init__(suffix=None, derived_from=bin_signal,
+                         parent=parent, **kwargs)
+
+    def get(self, **kwargs):
+        bin_ = super().get(**kwargs)
+        return bin_to_ev(bin_)
+
+    def put(self, ev_value, **kwargs):
+        bin_value = ev_to_bin(ev_value)
+        return super().put(bin_value, **kwargs)
+
+    def describe(self):
+        desc = super().describe()
+        desc[self.name]['units'] = 'eV'
+        return desc
 
 
 class PermissiveGetSignal(Signal):
@@ -41,32 +88,31 @@ class PermissiveGetSignal(Signal):
 
 class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
     '''Xspress3 acquisition -> filestore'''
-    
+
     def __init__(self, basename,
                  config_time=0.5,
                  mds_key_format='{self._det.name}_ch{chan}',
                  parent=None,
                  **kwargs):
-        super().__init__(basename, 
-                         parent=parent, 
+        super().__init__(basename,
+                         parent=parent,
                          **kwargs)
         det = parent
         self._det = det.cam
         # Use the EpicsSignal file_template from the detector
         self.stage_sigs[self.auto_save] = 'No'
-        self.stage_sigs.pop(self.num_capture)
+
+        # TODO remove this
         self.stage_sigs.clear()
-        # (_file_template is used in _make_filename, etc)
-        
+
         self._filestore_res = None
-        self.channels = list(range(1, len([_ for _ in det.signal_names if _.startswith('chan')]) + 1))
-        self._total_points = None
+        self.channels = list(range(1, len([_ for _ in det.signal_names
+                                           if _.startswith('chan')]) + 1))
+        # this was in original code, but I kinda-sorta nuked because
+        # it was not needed for SRX and I could not guess what it did
         self._master = None
-        self._external_trig = None
+
         self._config_time = config_time
-        self.mds_keys = {chan: mds_key_format.format(self=self, chan=chan)
-                         for chan in self.channels}
-        self._file_plugin = None
 
     def _get_datum_args(self, seq_num):
         for chan in self.channels:
@@ -76,9 +122,9 @@ class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
         timestamp = time.time()
         uids = [str(uuid.uuid4()) for ch in self.channels]
 
-        #bulk_insert_datum(self._filestore_res, uids,
+        # bulk_insert_datum(self._filestore_res, uids,
         #                  self._get_datum_args(self._abs_trigger_count))
-        #print(self._get_datum_args(self.parent._abs_trigger_count))
+        # print(self._get_datum_args(self.parent._abs_trigger_count))
 
         return {self.mds_keys[ch]: {'timestamp': timestamp,
                                     'value': uid,
@@ -119,17 +165,25 @@ class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
         fn, rp, write_path = super().make_filename()
 
         makedirs(write_path)
+
         return fn, rp, write_path
 
     def unstage(self):
-        # self._det.hdf5.capture.put(0)
         try:
             i = 0
+            # this needs a fail-safe, RE will now hang forever here
+            # as we eat all SIGINT to ensure that cleanup happens in
+            # orderly manner.
             while self.capture.value == 1:
                 i += 1
                 if (i % 50) == 0:
                     logger.warning('Still capturing data .... waiting.')
                 time.sleep(0.1)
+                if i > 150:
+                    logger.warning('Still capturing data .... giving up.')
+                    self._det.hdf5.capture.put(0)
+                    break
+
         except KeyboardInterrupt:
             logger.warning('Still capturing data .... interrupted.')
 
@@ -145,26 +199,25 @@ class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
         self._det.acquire.put(0, wait=True)
 
         total_points = self._det.parent.total_points.get()
-
+        spec_per_point = self._det.parent.spectrum_per_point.get()
+        total_capture = total_points * spec_per_point
         if ext_trig:
+            # TODO some self._master logic went here?
             logger.debug('Setting up external triggering')
             # self._det.trigger_mode.put('TTL Veto Only')
             self.stage_sigs[self._det.trigger_mode] = 'TTL Veto Only'
-            # if self._total_points is None:
-            #     raise RuntimeError('configure was not called on this detector')
-            # total_points = self._det.total_points.get()
-            # self._det.num_images.put(self._total_points)
+            total_points = self._det.total_points.get()
             if total_points is None:
                 raise RuntimeError('configure was not called on this detector')
-            self.stage_sigs[self._det.num_images] = total_points
+            self.stage_sigs[self._det.num_images] = total_capture
 
         else:
             logger.debug('Setting up internal triggering')
             # self._det.trigger_mode.put('Internal')
             # self._det.num_images.put(1)
             self.stage_sigs[self._det.trigger_mode] = 'Internal'
-            self.stage_sigs[self._det.num_images] = 1
-        
+            self.stage_sigs[self._det.num_images] = spec_per_point
+
         logger.debug('Configuring other filestore stuff')
 
         logger.debug('Making the filename')
@@ -173,8 +226,9 @@ class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
         logger.debug('Setting up hdf5 plugin: ioc path: %s filename: %s',
                      write_path, filename)
 
-        #self.stage_sigs[self.blocking_callbacks] = 1
-        #self.stage_sigs[self.enable] = 1
+        # TODO can we uncomment these?
+        # self.stage_sigs[self.blocking_callbacks] = 1
+        # self.stage_sigs[self.enable] = 1
 
         if not self._det.parent.hdf5.file_path_exists.value:
             raise IOError("Path {} does not exits on IOC!! Please Check"
@@ -186,21 +240,31 @@ class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
         if ext_trig:
             logger.debug('Starting acquisition (waiting for triggers)')
             self.stage_sigs[self._det.acquire] = 1
-        self.stage_sigs[self.num_capture] = total_points
-        # actually run everything
+
+        # this must be set after self._det.num_images because at the Epics
+        # layer  there is a helpful link that sets this equal to that (but
+        # not the other way)
+        self.stage_sigs[self.num_capture] = total_capture
+
+        # actually apply the stage_sigs
         ret = super().stage()
+
         logger.debug('Inserting the filestore resource')
         self._filestore_res = fs_api.insert_resource(
             Xspress3HDF5Handler.HANDLER_NAME, self._fn, {})
+
         # this gets auto turned off at the end
         self.capture.put(1)
 
         # Xspress3 needs a bit of time to configure itself...
+        # this does not play nice with the event loop :/
         time.sleep(self._config_time)
+
         return ret
 
     def configure(self, total_points=0, master=None, external_trig=False,
-            **kwargs):
+                  **kwargs):
+        raise NotImplementedError()
         self._total_points = total_points
         self._master = master
         self._external_trig = external_trig
@@ -213,25 +277,17 @@ class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
     def count_time(self, val):
         self._det.acquire_period.put(val)
 
-    def acquire(self, **kwargs):
-        status = DetectorStatus(self)
-        status._finished()
-        # scaler/zebra take care of timing
-        return status
-
     def describe(self):
-        # TODO: describe is called prior to configure, so the filestore
-        #       resource
-        #       is not yet generated
-        size = (self._det.hdf5.width.value, )
+        # should this use a better value?
+        size = (self._det.hdf5.width.get(), )
 
         spec_desc = {'external': 'FILESTORE:',
                      'dtype': 'array',
                      'shape': size,
                      }
-
+        # shouldn't the source be the array PV?
         if self._filestore_res is not None:
-            source = 'FileStore:{0.id!s}'.format(self._filestore_res)
+            source = 'FileStore::{0.id!s}'.format(self._filestore_res)
         else:
             source = 'FileStore:'
 
@@ -242,14 +298,6 @@ class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
             desc['{}_ch{}'.format(self._det.name, chan)] = spec_desc
 
         return desc
-
-    def _insert_fs_resource(self, ):
-        return
-
-
-class Xspress3ExternalTrigger(SingleTrigger):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, image_name='xspress3', **kwargs)
 
 
 class Xspress3DetectorCam(Device):
@@ -290,53 +338,6 @@ class Xspress3DetectorCam(Device):
     xs_update = C(EpicsSignal, 'UPDATE')
     xs_update_attr = C(EpicsSignal, 'UPDATE_AttrUpdate')
     array_callbacks = C(SignalWithRBV, 'ArrayCallbacks')
-
-
-def ev_to_bin(ev):
-    '''Convert eV to bin number'''
-    return int(ev / 10)
-
-
-def bin_to_ev(bin_):
-    '''Convert bin number to eV'''
-    return int(bin_) * 10
-
-
-class DerivedSignal(Signal):
-    '''A signal which is derived from another one'''
-    def __init__(self, derived_from, **kwargs):
-        self._derived_from = derived_from
-        super().__init__(**kwargs)
-
-    def describe(self):
-        desc = self._derived_from.describe()[self._derived_from.name]
-        return {self.name: desc}
-
-    def get(self, **kwargs):
-        return self._derived_from.get(**kwargs)
-
-    def put(self, value, **kwargs):
-        return self._derived_from.put(value, **kwargs)
-
-
-class EvSignal(DerivedSignal):
-    '''A signal that converts a bin number into electron volts'''
-    def __init__(self, parent_attr, *, parent=None, **kwargs):
-        bin_signal = getattr(parent, parent_attr)
-        super().__init__(suffix=None, derived_from=bin_signal, parent=parent, **kwargs)
-
-    def get(self, **kwargs):
-        bin_ = super().get(**kwargs)
-        return bin_to_ev(bin_)
-
-    def put(self, ev_value, **kwargs):
-        bin_value = ev_to_bin(ev_value)
-        return super().put(bin_value, **kwargs)
-
-    def describe(self):
-        desc = super().describe()
-        desc[self.name]['units'] = 'eV'
-        return desc
 
 
 class Xspress3ROISettings(PluginBase):
@@ -443,23 +444,6 @@ class Xspress3ROI(Device):
         self.enable.put(enable)
 
 
-# class Xspress3SoftROI(Device):
-#     '''An ROI beyond what can be represented on the EPICS level'''
-#     bin_low = C(Signal)
-#     bin_high = C(Signal)
-#
-#     # derived from the bin signals, low and high electron volt settings:
-#     ev_low = C(EvSignal, parent_attr='bin_low')
-#     ev_high = C(EvSignal, parent_attr='bin_high')
-#
-#     data = C(Signal)
-#
-#     def read(self):
-#         raise RuntimeError('A SoftROI cannot be used in data acquisition')
-#
-#     describe = read
-#
-
 def make_rois(rois):
     defn = OrderedDict()
     for roi in rois:
@@ -528,7 +512,7 @@ class Xspress3Channel(Device):
             roi.clear()
 
 
-class Xspress3Detector(AreaDetector):
+class Xspress3Detector(DetectorBase):
     cam = C(Xspress3DetectorCam, '')
     # hdf5 = C(Xspress3HDFPlugin, '')
 
@@ -547,7 +531,7 @@ class Xspress3Detector(AreaDetector):
                  **kwargs):
 
         if read_attrs is None:
-            read_attrs = ['channel1']
+            read_attrs = ['channel1', ]
 
         if configuration_attrs is None:
             configuration_attrs = ['channel1.rois',
@@ -668,6 +652,7 @@ class Xspress3Detector(AreaDetector):
 
             yield roi.name, roi_info
 
+
 class XSPressTrigger(BlueskyInterface):
     """Base class for trigger mixin classes
 
@@ -691,17 +676,6 @@ class XSPressTrigger(BlueskyInterface):
         super().unstage()
         self._acquisition_signal.clear_sub(self._acquire_changed)
 
-    def trigger(self):
-        "Trigger one acquisition."
-        if self._staged != Staged.yes:
-            raise RuntimeError("This detector is not ready to trigger."
-                               "Call the stage() method before triggering.")
-        self._abs_trigger_count += 1
-        self._status = DeviceStatus(self)
-        self._acquisition_signal.put(1, wait=False)
-        self.dispatch(self._image_name, ttime.time())
-        return self._status
-
     def _acquire_changed(self, value=None, old_value=None, **kwargs):
         "This is called when the 'acquire' signal changes."
         if self._status is None:
@@ -718,7 +692,7 @@ class XSPressTrigger(BlueskyInterface):
         self._acquisition_signal.put(1, wait=False)
         trigger_time = ttime.time()
 
-        for sn in self.signal_names:
+        for sn in self.read_attrs:
             if sn.startswith('channel'):
                 ch = getattr(self, sn)
                 self.dispatch(ch.name, trigger_time)
@@ -735,11 +709,18 @@ class HxnXspress3Detector(XSPressTrigger, Xspress3Detector):
 
     total_points = Cpt(PermissiveGetSignal, None, add_prefix=(),
                        value=15)
+    spectrum_per_point = Cpt(PermissiveGetSignal, None, add_prefix=(),
+                             value=1)
+
     hdf5 = Cpt(Xspress3FileStore, 'HDF5:', write_path_template='/epics/data/')
 
-    def __init__(self, *args, configuration_attrs=None, **kwargs):
+    def __init__(self, *args, configuration_attrs=None, read_attrs=None,
+                 **kwargs):
         if configuration_attrs is None:
-            configuration_attrs = ['external_trig']
+            configuration_attrs = ['external_trig', 'total_points',
+                                   'spectrum_per_point']
+        if read_attrs is None:
+            read_attrs = ['channel1', 'channel2', 'channel3', 'hdf5']
         super().__init__(*args, configuration_attrs=None, **kwargs)
 
     # Currently only using three channels. Uncomment these to enable more
