@@ -214,7 +214,7 @@ class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
         logger.debug('Setting up hdf5 plugin: ioc path: %s filename: %s',
                      write_path, filename)
 
-        if not self.parent.hdf5.file_path_exists.value:
+        if not self.file_path_exists.value:
             raise IOError("Path {} does not exits on IOC!! Please Check"
                           .format(self.settings.hdf5.file_path.value))
 
@@ -260,7 +260,7 @@ class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
 
     def describe(self):
         # should this use a better value?
-        size = (self.settings.hdf5.width.get(), )
+        size = (self.width.get(), )
 
         spec_desc = {'external': 'FILESTORE:',
                      'dtype': 'array',
@@ -420,7 +420,7 @@ class Xspress3ROI(Device):
 
         logger.debug('Setting up EPICS ROI: name=%s ev=(%s, %s) '
                      'enable=%s prefix=%s channel=%s',
-                     self.name, ev_low, ev_high, enable, self._prefix,
+                     self.name, ev_low, ev_high, enable, self.prefix,
                      self._channel)
         if ev_high <= self.ev_low.get():
             self.ev_low.put(0)
