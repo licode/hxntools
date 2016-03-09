@@ -14,7 +14,7 @@ from collections import OrderedDict
 
 import h5py
 
-from ophyd.areadetector import (DetectorBase,
+from ophyd.areadetector import (DetectorBase, CamBase,
                                 EpicsSignalWithRBV as SignalWithRBV)
 from ophyd import (Signal, EpicsSignal, EpicsSignalRO)
 
@@ -70,17 +70,19 @@ class PermissiveGetSignal(Signal):
 
 class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
     '''Xspress3 acquisition -> filestore'''
+    num_capture_calc = C(EpicsSignal, 'NumCapture_CALC')
+    num_capture_calc_disable = C(EpicsSignal, 'NumCapture_CALC.DISA')
 
     def __init__(self, basename,
                  config_time=0.5,
-                 mds_key_format='{self._settings.name}_ch{chan}',
+                 mds_key_format='{self.settings.name}_ch{chan}',
                  parent=None,
                  **kwargs):
         super().__init__(basename,
                          parent=parent,
                          **kwargs)
         det = parent
-        self._settings = det.settings
+        self.settings = det.settings
         # Use the EpicsSignal file_template from the detector
         self.stage_sigs[self.blocking_callbacks] = 1
         self.stage_sigs[self.enable] = 1
@@ -179,7 +181,7 @@ class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
 
         logger.debug('Stopping xspress3 acquisition')
         # really force it to stop acquiring
-        self._settings.acquire.put(0, wait=True)
+        self.settings.acquire.put(0, wait=True)
 
         total_points = self.parent.total_points.get()
         spec_per_point = self.parent.spectra_per_point.get()
@@ -188,20 +190,20 @@ class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
         # re-order the stage signals and disable the calc record which is
         # interfering with the capture count
         self.stage_sigs.pop(self.num_capture, None)
-        self.stage_sigs.pop(self._settings.num_images, None)
-        self.stage_sigs[self._settings.xs_hdf_num_capture_calc_disable] = 1
+        self.stage_sigs.pop(self.settings.num_images, None)
+        self.stage_sigs[self.num_capture_calc_disable] = 1
 
         if ext_trig:
             # TODO some self._master logic went here?
             logger.debug('Setting up external triggering')
-            self.stage_sigs[self._settings.trigger_mode] = 'TTL Veto Only'
-            self.stage_sigs[self._settings.num_images] = total_capture
+            self.stage_sigs[self.settings.trigger_mode] = 'TTL Veto Only'
+            self.stage_sigs[self.settings.num_images] = total_capture
         else:
             logger.debug('Setting up internal triggering')
-            # self._settings.trigger_mode.put('Internal')
-            # self._settings.num_images.put(1)
-            self.stage_sigs[self._settings.trigger_mode] = 'Internal'
-            self.stage_sigs[self._settings.num_images] = spec_per_point
+            # self.settings.trigger_mode.put('Internal')
+            # self.settings.num_images.put(1)
+            self.stage_sigs[self.settings.trigger_mode] = 'Internal'
+            self.stage_sigs[self.settings.num_images] = spec_per_point
 
         self.stage_sigs[self.auto_save] = 'No'
         logger.debug('Configuring other filestore stuff')
@@ -214,16 +216,16 @@ class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
 
         if not self.parent.hdf5.file_path_exists.value:
             raise IOError("Path {} does not exits on IOC!! Please Check"
-                          .format(self._settings.hdf5.file_path.value))
+                          .format(self.settings.hdf5.file_path.value))
 
         logger.debug('Erasing old spectra')
-        self._settings.xs_erase.put(1, wait=True)
+        self.settings.erase.put(1, wait=True)
 
         if ext_trig:
             logger.debug('Starting acquisition (waiting for triggers)')
-            self.stage_sigs[self._settings.acquire] = 1
+            self.stage_sigs[self.settings.acquire] = 1
 
-        # this must be set after self._settings.num_images because at the Epics
+        # this must be set after self.settings.num_images because at the Epics
         # layer  there is a helpful link that sets this equal to that (but
         # not the other way)
         self.stage_sigs[self.num_capture] = total_capture
@@ -250,15 +252,15 @@ class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
 
     @property
     def count_time(self):
-        return self._settings.acquire_period.value
+        return self.settings.acquire_period.value
 
     @count_time.setter
     def count_time(self, val):
-        self._settings.acquire_period.put(val)
+        self.settings.acquire_period.put(val)
 
     def describe(self):
         # should this use a better value?
-        size = (self._settings.hdf5.width.get(), )
+        size = (self.settings.hdf5.width.get(), )
 
         spec_desc = {'external': 'FILESTORE:',
                      'dtype': 'array',
@@ -274,51 +276,54 @@ class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
 
         desc = {}
         for chan in self.channels:
-            desc['{}_ch{}'.format(self._settings.name, chan)] = spec_desc
+            desc['{}_ch{}'.format(self.settings.name, chan)] = spec_desc
 
         return desc
 
 
-class Xspress3DetectorSettings(Device):
+class Xspress3DetectorSettings(CamBase):
     '''Quantum Detectors Xspress3 detector'''
-    acquire = C(EpicsSignal, 'Acquire')
-    trigger_mode = C(EpicsSignal, 'TriggerMode')
-    num_images = C(SignalWithRBV, 'NumImages')
-    xs_config_path = C(SignalWithRBV, 'CONFIG_PATH')
-    xs_config_save_path = C(SignalWithRBV, 'CONFIG_SAVE_PATH')
-    xs_connect = C(EpicsSignal, 'CONNECT')
-    xs_connected = C(EpicsSignal, 'CONNECTED')
-    xs_ctrl_dtc = C(SignalWithRBV, 'CTRL_DTC')
-    xs_ctrl_mca_roi = C(SignalWithRBV, 'CTRL_MCA_ROI')
-    xs_debounce = C(SignalWithRBV, 'DEBOUNCE')
-    xs_disconnect = C(EpicsSignal, 'DISCONNECT')
-    xs_erase = C(EpicsSignal, 'ERASE')
-    xs_erase_array_counters = C(EpicsSignal, 'ERASE_ArrayCounters')
-    xs_erase_attr_reset = C(EpicsSignal, 'ERASE_AttrReset')
-    xs_erase_proc_reset_filter = C(EpicsSignal, 'ERASE_PROC_ResetFilter')
-    xs_frame_count = C(EpicsSignalRO, 'FRAME_COUNT_RBV')
-    xs_hdf_capture = C(EpicsSignalRO, 'HDF5:Capture_RBV')
-    xs_hdf_num_capture_calc = C(EpicsSignal, 'HDF5:NumCapture_CALC')
-    xs_hdf_num_capture_calc_disable = C(EpicsSignal,
-                                        'HDF5:NumCapture_CALC.DISA')
-    xs_invert_f0 = C(SignalWithRBV, 'INVERT_F0')
-    xs_invert_veto = C(SignalWithRBV, 'INVERT_VETO')
-    xs_max_frames = C(EpicsSignalRO, 'MAX_FRAMES_RBV')
-    xs_max_frames_driver = C(EpicsSignalRO, 'MAX_FRAMES_DRIVER_RBV')
-    xs_max_num_channels = C(EpicsSignalRO, 'MAX_NUM_CHANNELS_RBV')
-    xs_max_spectra = C(SignalWithRBV, 'MAX_SPECTRA')
-    xs_name = C(EpicsSignal, 'NAME')
-    xs_num_cards = C(EpicsSignalRO, 'NUM_CARDS_RBV')
-    xs_num_channels = C(SignalWithRBV, 'NUM_CHANNELS')
-    xs_num_frames_config = C(SignalWithRBV, 'NUM_FRAMES_CONFIG')
-    xs_reset = C(EpicsSignal, 'RESET')
-    xs_restore_settings = C(EpicsSignal, 'RESTORE_SETTINGS')
-    xs_run_flags = C(SignalWithRBV, 'RUN_FLAGS')
-    xs_save_settings = C(EpicsSignal, 'SAVE_SETTINGS')
-    xs_trigger = C(EpicsSignal, 'TRIGGER')
-    xs_update = C(EpicsSignal, 'UPDATE')
-    xs_update_attr = C(EpicsSignal, 'UPDATE_AttrUpdate')
-    array_callbacks = C(SignalWithRBV, 'ArrayCallbacks')
+
+    def __init__(self, prefix, *, read_attrs=None, configuration_attrs=None,
+                 **kwargs):
+        if read_attrs is None:
+            read_attrs = []
+        if configuration_attrs is None:
+            configuration_attrs = ['config_path', 'config_save_path',
+                                   ]
+        super().__init__(prefix, read_attrs=read_attrs,
+                         configuration_attrs=configuration_attrs, **kwargs)
+
+    config_path = C(SignalWithRBV, 'CONFIG_PATH', string=True)
+    config_save_path = C(SignalWithRBV, 'CONFIG_SAVE_PATH', string=True)
+    connect = C(EpicsSignal, 'CONNECT')
+    connected = C(EpicsSignal, 'CONNECTED')
+    ctrl_dtc = C(SignalWithRBV, 'CTRL_DTC')
+    ctrl_mca_roi = C(SignalWithRBV, 'CTRL_MCA_ROI')
+    debounce = C(SignalWithRBV, 'DEBOUNCE')
+    disconnect = C(EpicsSignal, 'DISCONNECT')
+    erase = C(EpicsSignal, 'ERASE')
+    # erase_array_counters = C(EpicsSignal, 'ERASE_ArrayCounters')
+    # erase_attr_reset = C(EpicsSignal, 'ERASE_AttrReset')
+    # erase_proc_reset_filter = C(EpicsSignal, 'ERASE_PROC_ResetFilter')
+    frame_count = C(EpicsSignalRO, 'FRAME_COUNT_RBV')
+    invert_f0 = C(SignalWithRBV, 'INVERT_F0')
+    invert_veto = C(SignalWithRBV, 'INVERT_VETO')
+    max_frames = C(EpicsSignalRO, 'MAX_FRAMES_RBV')
+    max_frames_driver = C(EpicsSignalRO, 'MAX_FRAMES_DRIVER_RBV')
+    max_num_channels = C(EpicsSignalRO, 'MAX_NUM_CHANNELS_RBV')
+    max_spectra = C(SignalWithRBV, 'MAX_SPECTRA')
+    xsp_name = C(EpicsSignal, 'NAME')
+    num_cards = C(EpicsSignalRO, 'NUM_CARDS_RBV')
+    num_channels = C(SignalWithRBV, 'NUM_CHANNELS')
+    num_frames_config = C(SignalWithRBV, 'NUM_FRAMES_CONFIG')
+    reset = C(EpicsSignal, 'RESET')
+    restore_settings = C(EpicsSignal, 'RESTORE_SETTINGS')
+    run_flags = C(SignalWithRBV, 'RUN_FLAGS')
+    save_settings = C(EpicsSignal, 'SAVE_SETTINGS')
+    trigger = C(EpicsSignal, 'TRIGGER')
+    # update = C(EpicsSignal, 'UPDATE')
+    # update_attr = C(EpicsSignal, 'UPDATE_AttrUpdate')
 
 
 class Xspress3ROISettings(PluginBase):
@@ -525,22 +530,27 @@ class Xspress3Detector(DetectorBase):
 
         if configuration_attrs is None:
             configuration_attrs = ['channel1.rois',
-                                   'cam.xs_config_path',
-                                   'cam.xs_config_save_path',
-                                   'cam.xs_connected', 'cam.xs_ctrl_dtc',
-                                   'cam.xs_ctrl_mca_roi', 'cam.xs_debounce',
-                                   'cam.xs_erase', 'cam.xs_frame_count',
-                                   'cam.xs_hdf_capture',
-                                   'cam.xs_hdf_num_capture_calc',
-                                   'cam.xs_invert_f0', 'cam.xs_invert_veto',
-                                   'cam.xs_max_frames',
-                                   'cam.xs_max_frames_driver',
-                                   'cam.xs_max_num_channels',
-                                   'cam.xs_max_spectra', 'cam.xs_name',
-                                   'cam.xs_num_cards', 'cam.xs_num_channels',
-                                   'cam.xs_num_frames_config', 'cam.xs_reset',
-                                   'cam.xs_restore_settings',
-                                   'cam.xs_run_flags', 'cam.xs_save_settings']
+                                   'settings.config_path',
+                                   'settings.config_save_path',
+                                   'settings.connected', 'settings.ctrl_dtc',
+                                   'settings.ctrl_mca_roi',
+                                   'settings.debounce', 'settings.erase',
+                                   'settings.frame_count',
+                                   'settings.hdf_capture',
+                                   'settings.invert_f0',
+                                   'settings.invert_veto',
+                                   'settings.max_frames',
+                                   'settings.max_frames_driver',
+                                   'settings.max_num_channels',
+                                   'settings.max_spectra',
+                                   'settings.xsp_name',
+                                   'settings.num_cards',
+                                   'settings.num_channels',
+                                   'settings.num_frames_config',
+                                   'settings.reset',
+                                   'settings.restore_settings',
+                                   'settings.run_flags',
+                                   'settings.save_settings']
 
         super().__init__(prefix, read_attrs=read_attrs,
                          configuration_attrs=configuration_attrs,
@@ -593,7 +603,7 @@ class Xspress3Detector(DetectorBase):
                 if try_stop:
                     time.sleep(2.0)
                     self.hdf5.capture.put(0)
-                    self.acquire.put(0)
+                    self.settings.acquire.put(0)
             except KeyboardInterrupt:
                 raise RuntimeError('Unable to open HDF5 file; interrupted '
                                    'by Ctrl-C')
@@ -695,6 +705,42 @@ class HxnXspress3Detector(XspressTrigger, Xspress3Detector):
     channel3 = C(Xspress3Channel, 'C3_', channel_num=3)
 
     hdf5 = Cpt(Xspress3FileStore, 'HDF5:',
+               write_path_template='/data')
+
+    def __init__(self, prefix, *, configuration_attrs=None, read_attrs=None,
+                 **kwargs):
+        if configuration_attrs is None:
+            configuration_attrs = ['external_trig', 'total_points',
+                                   'spectra_per_point']
+        if read_attrs is None:
+            read_attrs = ['channel1', 'channel2', 'channel3', 'hdf5']
+        super().__init__(prefix, configuration_attrs=configuration_attrs,
+                         read_attrs=read_attrs, **kwargs)
+
+    # Currently only using three channels. Uncomment these to enable more
+    # channels:
+    # channel4 = C(Xspress3Channel, 'C4_', channel_num=4)
+    # channel5 = C(Xspress3Channel, 'C5_', channel_num=5)
+    # channel6 = C(Xspress3Channel, 'C6_', channel_num=6)
+    # channel7 = C(Xspress3Channel, 'C7_', channel_num=7)
+    # channel8 = C(Xspress3Channel, 'C8_', channel_num=8)
+
+
+class SrxXspress3Detector(XspressTrigger, Xspress3Detector):
+    # TODO: garth, the ioc is missing some PVs?
+    #   det_settings.erase_array_counters
+    #       (XF:05IDD-ES{Xsp:1}:ERASE_ArrayCounters)
+    #   det_settings.erase_attr_reset (XF:05IDD-ES{Xsp:1}:ERASE_AttrReset)
+    #   det_settings.erase_proc_reset_filter
+    #       (XF:05IDD-ES{Xsp:1}:ERASE_PROC_ResetFilter)
+    #   det_settings.update_attr (XF:05IDD-ES{Xsp:1}:UPDATE_AttrUpdate)
+    #   det_settings.update (XF:05IDD-ES{Xsp:1}:UPDATE)
+
+    channel1 = C(Xspress3Channel, 'C1_', channel_num=1)
+    channel2 = C(Xspress3Channel, 'C2_', channel_num=2)
+    channel3 = C(Xspress3Channel, 'C3_', channel_num=3)
+
+    hdf5 = Cpt(Xspress3FileStore, 'HDF5:',
                read_path_template='/data/XSPRESS3/',
                write_path_template='/epics/data/')
 
@@ -702,7 +748,7 @@ class HxnXspress3Detector(XspressTrigger, Xspress3Detector):
                  **kwargs):
         if configuration_attrs is None:
             configuration_attrs = ['external_trig', 'total_points',
-                                   'spectra_per_point']
+                                   'spectra_per_point', 'settings']
         if read_attrs is None:
             read_attrs = ['channel1', 'channel2', 'channel3', 'hdf5']
         super().__init__(prefix, configuration_attrs=configuration_attrs,
