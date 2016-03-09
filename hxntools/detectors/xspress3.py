@@ -1,5 +1,6 @@
 from __future__ import print_function, division
 import time
+import time as ttime
 import logging
 
 # import itertools
@@ -21,6 +22,8 @@ from ophyd.areadetector.plugins import PluginBase
 from ophyd.areadetector.filestore_mixins import (FileStorePluginBase, new_uid)
 from ophyd.areadetector.trigger_mixins import (TriggerBase, SingleTrigger)
 from ophyd.areadetector.plugins import HDF5Plugin
+from ..device import BlueskyInterface, Staged, Component as Cpt
+from ..ophydobj import DeviceStatus
 
 from ..handlers import Xspress3HDF5Handler
 from ..handlers.xspress3 import XRF_DATA_KEY
@@ -651,15 +654,17 @@ class Xspress3Detector(AreaDetector):
 
             yield roi.name, roi_info
 
+
 class ExpressTrigger(SingleTrigger):
     def trigger(self):
-        if self._staged ] != Staged.yes:
+        if self._staged != Staged.yes:
             raise RuntimeError("not staged")
 
         self._status = DeviceStatus(self)
         self._acquisition_signal.put(1, wait=False)
         trigger_time = ttime.time()
-        for sn is self.signal_names:
+
+        for sn in self.signal_names:
             if sn.startswith('channel'):
                 ch = getattr(self, sn)
                 self.dispatch(ch.name, trigger_time)
