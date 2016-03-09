@@ -64,8 +64,7 @@ class EvSignal(DerivedSignal):
     '''A signal that converts a bin number into electron volts'''
     def __init__(self, parent_attr, *, parent=None, **kwargs):
         bin_signal = getattr(parent, parent_attr)
-        super().__init__(suffix=None, derived_from=bin_signal,
-                         parent=parent, **kwargs)
+        super().__init__(derived_from=bin_signal, parent=parent, **kwargs)
 
     def get(self, **kwargs):
         bin_ = super().get(**kwargs)
@@ -352,8 +351,8 @@ class Xspress3ROI(Device):
     bin_high = FC(SignalWithRBV, '{self.channel.prefix}{self.bin_suffix}_HLM')
 
     # derived from the bin signals, low and high electron volt settings:
-    # ev_low = C(EvSignal, parent_attr='bin_low')
-    # ev_high = C(EvSignal, parent_attr='bin_high')
+    ev_low = C(EvSignal, parent_attr='bin_low')
+    ev_high = C(EvSignal, parent_attr='bin_high')
 
     # C{channel}_  ROI{self.roi_num}
     value = C(EpicsSignalRO, 'Value_RBV')
@@ -596,7 +595,6 @@ class Xspress3Detector(DetectorBase):
 
     def open_hdf5_wait(self, fn, *, max_retries=2, try_stop=False):
         '''Wait for the HDF5 file specified to be closed'''
-        det = self._det
         warned = False
         retry = 0
         while retry < max_retries:
@@ -611,8 +609,8 @@ class Xspress3Detector(DetectorBase):
 
                 if try_stop:
                     time.sleep(2.0)
-                    det.hdf5.capture.put(0)
-                    det.acquire.put(0)
+                    self.hdf5.capture.put(0)
+                    self.acquire.put(0)
             except KeyboardInterrupt:
                 raise RuntimeError('Unable to open HDF5 file; interrupted '
                                    'by Ctrl-C')
@@ -656,7 +654,8 @@ class Xspress3Detector(DetectorBase):
                                 ev_low=roi.ev_low.get(),
                                 ev_high=roi.ev_high.get(),
                                 value=roi_data,
-                                value_sum=None)
+                                value_sum=None,
+                                enable=None)
 
             yield roi.name, roi_info
 
