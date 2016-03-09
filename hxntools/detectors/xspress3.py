@@ -529,28 +529,7 @@ class Xspress3Detector(DetectorBase):
             read_attrs = ['channel1', ]
 
         if configuration_attrs is None:
-            configuration_attrs = ['channel1.rois',
-                                   'settings.config_path',
-                                   'settings.config_save_path',
-                                   'settings.connected', 'settings.ctrl_dtc',
-                                   'settings.ctrl_mca_roi',
-                                   'settings.debounce', 'settings.erase',
-                                   'settings.frame_count',
-                                   'settings.hdf_capture',
-                                   'settings.invert_f0',
-                                   'settings.invert_veto',
-                                   'settings.max_frames',
-                                   'settings.max_frames_driver',
-                                   'settings.max_num_channels',
-                                   'settings.max_spectra',
-                                   'settings.xsp_name',
-                                   'settings.num_cards',
-                                   'settings.num_channels',
-                                   'settings.num_frames_config',
-                                   'settings.reset',
-                                   'settings.restore_settings',
-                                   'settings.run_flags',
-                                   'settings.save_settings']
+            configuration_attrs = ['channel1.rois', 'settings']
 
         super().__init__(prefix, read_attrs=read_attrs,
                          configuration_attrs=configuration_attrs,
