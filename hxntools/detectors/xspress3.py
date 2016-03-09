@@ -123,8 +123,8 @@ class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
         timestamp = time.time()
         uids = [str(uuid.uuid4()) for ch in self.channels]
 
-        # bulk_insert_datum(self._filestore_res, uids,
-        #                  self._get_datum_args(self._abs_trigger_count))
+        bulk_insert_datum(self._filestore_res, uids,
+                          self._get_datum_args(self.parent._abs_trigger_count))
         # print(self._get_datum_args(self.parent._abs_trigger_count))
 
         return {self.mds_keys[ch]: {'timestamp': timestamp,
