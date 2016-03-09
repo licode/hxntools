@@ -274,7 +274,7 @@ class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
 
         spec_desc['source'] = source
 
-        desc = {}
+        desc = OrderedDict()
         for chan in self.channels:
             desc['{}_ch{}'.format(self.settings.name, chan)] = spec_desc
 
@@ -454,6 +454,7 @@ def make_rois(rois):
 
 class Xspress3Channel(Device):
     roi_name_format = 'Det{self.channel_num}_{roi_name}'
+    roi_sum_name_format = 'Det{self.channel_num}_{roi_name}_sum'
 
     rois = DDC(make_rois(range(1, 17)))
     vis_enabled = C(EpicsSignal, 'PluginControlVal')
@@ -481,17 +482,22 @@ class Xspress3Channel(Device):
             high eV setting
         name : str, optional
             The unformatted ROI name to set. Each channel specifies its own
-                channel.roi_name_format = 'Det{self.channel_num}_{roi_name}'
-            in which the name parameter will get expanded.
+            `roi_name_format` and `roi_sum_name_format` in which the name
+            parameter will get expanded.
         '''
         if isinstance(index, Xspress3ROI):
             roi = index
         else:
-            roi = list(self.all_rois)[index]
+            if index <= 0:
+                raise ValueError('ROI index starts from 1')
+            roi = list(self.all_rois)[index - 1]
 
         roi.configure(ev_low, ev_high)
         if name is not None:
-            roi.name = self.roi_name_format.format(self=self, roi_name=name)
+            roi.value.name = self.roi_name_format.format(self=self,
+                                                         roi_name=name)
+            roi.value_sum.name = self.roi_sum_name_format.format(self=self,
+                                                                 roi_name=name)
 
     def clear_all_rois(self):
         '''Clear all ROIs'''
