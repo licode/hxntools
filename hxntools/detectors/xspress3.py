@@ -63,10 +63,6 @@ class EvSignal(DerivedSignal):
         return desc
 
 
-class PermissiveGetSignal(Signal):
-    def get(self, use_monitor=None):
-        return super().get()
-
 
 class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
     '''Xspress3 acquisition -> filestore'''
@@ -508,11 +504,11 @@ class Xspress3Channel(Device):
 class Xspress3Detector(DetectorBase):
     settings = C(Xspress3DetectorSettings, '')
 
-    external_trig = Cpt(PermissiveGetSignal, value=False,
+    external_trig = Cpt(Signal, value=False,
                         doc='Use external triggering')
-    total_points = Cpt(PermissiveGetSignal, value=2,
+    total_points = Cpt(Signal, value=2,
                        doc='The total number of points to acquire overall')
-    spectra_per_point = Cpt(PermissiveGetSignal, value=1,
+    spectra_per_point = Cpt(Signal, value=1,
                             doc='Number of spectra per point')
     make_directories = Cpt(Signal, value=False,
                            doc='Make directories on the DAQ side')
