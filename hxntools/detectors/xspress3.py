@@ -63,25 +63,21 @@ class EvSignal(DerivedSignal):
         return desc
 
 
-
 class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
     '''Xspress3 acquisition -> filestore'''
     num_capture_calc = C(EpicsSignal, 'NumCapture_CALC')
     num_capture_calc_disable = C(EpicsSignal, 'NumCapture_CALC.DISA')
 
-    def __init__(self, basename,
-                 config_time=0.5,
-                 mds_key_format='{self.settings.name}_ch{chan}',
-                 parent=None,
+    def __init__(self, basename, *, config_time=0.5,
+                 mds_key_format='{self.settings.name}_ch{chan}', parent=None,
                  **kwargs):
-        super().__init__(basename,
-                         parent=parent,
-                         **kwargs)
+        super().__init__(basename, parent=parent, **kwargs)
         det = parent
         self.settings = det.settings
         # Use the EpicsSignal file_template from the detector
         self.stage_sigs[self.blocking_callbacks] = 1
         self.stage_sigs[self.enable] = 1
+        self.stage_sigs[self.file_template] = '%s%s_%6.6d.h5'
 
         self._filestore_res = None
         self.channels = list(range(1, len([_ for _ in det.signal_names
