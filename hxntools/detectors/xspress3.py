@@ -92,7 +92,7 @@ class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
 
     def _get_datum_args(self, seq_num):
         for chan in self.channels:
-            yield {'frame': seq_num, 'channel': chan}
+            yield {'frame': seq_num - 1, 'channel': chan}
 
     def read(self):
         timestamp = time.time()
@@ -107,6 +107,10 @@ class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
                                     }
                 for uid, ch in zip(uids, self.channels)
                 }
+
+    def stop(self):
+        ret = super().stop()
+        self.capture.put(0)
 
     def kickoff(self):
         # TODO
@@ -668,6 +672,7 @@ class XspressTrigger(BlueskyInterface):
             raise RuntimeError("not staged")
 
         self._status = DeviceStatus(self)
+        self.settings.erase.put(1)
         self._acquisition_signal.put(1, wait=False)
         self._abs_trigger_count += 1
         trigger_time = ttime.time()
