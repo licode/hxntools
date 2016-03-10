@@ -205,10 +205,6 @@ class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
         logger.debug('Setting up hdf5 plugin: ioc path: %s filename: %s',
                      write_path, filename)
 
-        if not self.file_path_exists.value:
-            raise IOError("Path {} does not exits on IOC!! Please Check"
-                          .format(self.file_path.value))
-
         logger.debug('Erasing old spectra')
         self.settings.erase.put(1, wait=True)
 
@@ -223,6 +219,14 @@ class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
 
         # actually apply the stage_sigs
         ret = super().stage()
+
+        self._fn = self.file_template.get() % (self._fp,
+                                               self.file_name.get(),
+                                               self.file_number.get())
+
+        if not self.file_path_exists.value:
+            raise IOError("Path {} does not exits on IOC!! Please Check"
+                          .format(self.file_path.value))
 
         logger.debug('Inserting the filestore resource: %s', self._fn)
         self._filestore_res = fs_api.insert_resource(
