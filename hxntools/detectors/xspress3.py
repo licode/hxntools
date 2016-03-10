@@ -207,7 +207,7 @@ class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
 
         if not self.file_path_exists.value:
             raise IOError("Path {} does not exits on IOC!! Please Check"
-                          .format(self.settings.hdf5.file_path.value))
+                          .format(self.file_path.value))
 
         logger.debug('Erasing old spectra')
         self.settings.erase.put(1, wait=True)
