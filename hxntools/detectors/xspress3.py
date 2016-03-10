@@ -140,7 +140,6 @@ class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
 
     def make_filename(self):
         fn, rp, write_path = super().make_filename()
-
         if self.parent.make_directories.get():
             makedirs(write_path)
         return fn, rp, write_path
@@ -151,7 +150,7 @@ class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
             # this needs a fail-safe, RE will now hang forever here
             # as we eat all SIGINT to ensure that cleanup happens in
             # orderly manner.
-            while self.capture.value == 1:
+            while self.capture.get() == 1:
                 i += 1
                 if (i % 50) == 0:
                     logger.warning('Still capturing data .... waiting.')
@@ -225,7 +224,7 @@ class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
         # actually apply the stage_sigs
         ret = super().stage()
 
-        logger.debug('Inserting the filestore resource')
+        logger.debug('Inserting the filestore resource: %s', self._fn)
         self._filestore_res = fs_api.insert_resource(
             Xspress3HDF5Handler.HANDLER_NAME, self._fn, {})
 
