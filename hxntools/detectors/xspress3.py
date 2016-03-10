@@ -108,6 +108,10 @@ class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
                 for uid, ch in zip(uids, self.channels)
                 }
 
+    def stop(self):
+        ret = super().stop()
+        slef.capture.put(0)
+
     def kickoff(self):
         # TODO
         raise NotImplementedError()
