@@ -92,7 +92,7 @@ class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
 
     def _get_datum_args(self, seq_num):
         for chan in self.channels:
-            yield {'frame': seq_num, 'channel': chan}
+            yield {'frame': seq_num - 1, 'channel': chan}
 
     def read(self):
         timestamp = time.time()
