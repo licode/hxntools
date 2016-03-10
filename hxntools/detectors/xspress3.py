@@ -669,6 +669,7 @@ class XspressTrigger(BlueskyInterface):
 
         self._status = DeviceStatus(self)
         self._acquisition_signal.put(1, wait=False)
+        self._abs_trigger_count += 1
         trigger_time = ttime.time()
 
         for sn in self.read_attrs:
