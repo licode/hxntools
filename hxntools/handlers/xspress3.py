@@ -59,7 +59,11 @@ class Xspress3HDF5Handler(HandlerBase):
             self._dataset = hdf_dataset
 
     def __del__(self):
-        self.close()
+        try:
+            self.close()
+        except Exception as ex:
+            logger.warning('Failed to close file',
+                           exc_info=ex)
 
     def __call__(self, frame=None, channel=None):
         # Don't read out the dataset until it is requested for the first time.
