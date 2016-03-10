@@ -672,6 +672,7 @@ class XspressTrigger(BlueskyInterface):
             raise RuntimeError("not staged")
 
         self._status = DeviceStatus(self)
+        self.settings.erase.put(1)
         self._acquisition_signal.put(1, wait=False)
         self._abs_trigger_count += 1
         trigger_time = ttime.time()
