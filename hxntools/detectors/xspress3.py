@@ -690,7 +690,7 @@ class HxnXspress3Detector(XspressTrigger, Xspress3Detector):
     channel3 = C(Xspress3Channel, 'C3_', channel_num=3)
 
     hdf5 = Cpt(Xspress3FileStore, 'HDF5:',
-               write_path_template='/data')
+               write_path_template='/data/%Y/%m/%d/')
 
     def __init__(self, prefix, *, configuration_attrs=None, read_attrs=None,
                  **kwargs):
