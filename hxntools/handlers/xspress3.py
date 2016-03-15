@@ -4,7 +4,6 @@ import h5py
 import numpy as np
 import logging
 
-import filestore.api as fs_api
 from filestore.handlers import HandlerBase
 
 
@@ -89,5 +88,7 @@ class Xspress3HDF5Handler(HandlerBase):
         return '{0.__class__.__name__}(filename={0._filename!r})'.format(self)
 
 
-fs_api.register_handler(Xspress3HDF5Handler.HANDLER_NAME,
-                        Xspress3HDF5Handler)
+def register():
+    import filestore.api as fs_api
+    fs_api.register_handler(Xspress3HDF5Handler.HANDLER_NAME,
+                            Xspress3HDF5Handler)
