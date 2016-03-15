@@ -3,8 +3,13 @@ import logging
 
 from ophyd.areadetector.trigger_mixins import SingleTrigger
 from ophyd.areadetector.filestore_mixins import (FileStoreIterativeWrite,
-                                                 FileStoreTIFF)
-from ophyd import (Device, Component as Cpt, AreaDetector, TIFFPlugin)
+                                                 FileStoreTIFF,
+                                                 FileStoreHDF5IterativeWrite
+                                                 )
+from ophyd import (Device, Component as Cpt, AreaDetector, TIFFPlugin,
+                   HDF5Plugin,
+
+                   )
 from ophyd import (Signal, EpicsSignal, EpicsSignalRO)
 from ophyd.areadetector import (EpicsSignalWithRBV as SignalWithRBV, CamBase)
 from .utils import makedirs
@@ -73,7 +78,14 @@ class TimepixDetectorCam(CamBase):
 
 class TimepixDetector(SingleTrigger, AreaDetector):
     _html_docs = []
-
+    cam = Cpt(TimepixDetectorCam, 'cam1:',
+              read_attrs=[],
+              configuration_attrs=['tpx_corrections_dir', 'tpx_dac',
+                                   'tpx_dac_file', 'tpx_dev_ip', 'tpx_hw_file',
+                                   'tpx_system_id', 'tpx_pix_config_file',
+                                   ])
+    total_points = Cpt(Signal, value=2,
+                       doc='The total number of points to acquire overall')
     make_directories = Cpt(Signal, value=True,
                            doc='Make directories on the DAQ side')
 
@@ -86,30 +98,52 @@ class TimepixTiffPlugin(TIFFPlugin, FileStoreTIFF, FileStoreIterativeWrite):
         return fn, rp, write_path
 
 
+class HDF5PluginWithFileStore(HDF5Plugin, FileStoreHDF5IterativeWrite):
+    def __init__(self, prefix, **kwargs):
+        super().__init__(prefix, **kwargs)
+
+    def make_filename(self):
+        fn, rp, write_path = super().make_filename()
+        if self.parent.make_directories.get():
+            makedirs(write_path)
+        return fn, rp, write_path
+
+    def stage(self):
+        total_points = self.parent.total_points.get()
+        self.stage_sigs[self.num_capture] = total_points
+
+        # ensure that setting capture is the last thing that's done
+        self.stage_sigs.move_to_end(self.capture)
+        super().stage()
+
+
 class HxnTimepixDetector(TimepixDetector):
-    cam = Cpt(TimepixDetectorCam, 'cam1:',
-              read_attrs=[],
-              configuration_attrs=['tpx_corrections_dir', 'tpx_dac',
-                                   'tpx_dac_file', 'tpx_dev_ip', 'tpx_hw_file',
-                                   'tpx_system_id', 'tpx_pix_config_file',
-                                   ])
-    tiff1 = Cpt(TimepixTiffPlugin, 'TIFF1:',
-                read_attrs=[],
-                configuration_attrs=[],
-                write_path_template='/data/%Y/%m/%d/')
+    hdf5 = Cpt(HDF5PluginWithFileStore, 'HDF1:',
+               read_attrs=[],
+               configuration_attrs=[],
+               write_path_template='/data/%Y/%m/%d/')
+
+    # tiff1 = Cpt(TimepixTiffPlugin, 'TIFF1:',
+    #             read_attrs=[],
+    #             configuration_attrs=[],
+    #             write_path_template='/data/%Y/%m/%d/')
 
     def __init__(self, prefix, configuration_attrs=None, **kwargs):
         if configuration_attrs is None:
-            configuration_attrs = ['cam', 'tiff1']
+            configuration_attrs = ['cam', 'hdf5']
         super().__init__(prefix, configuration_attrs=configuration_attrs,
                          **kwargs)
 
-
     @property
     def count_time(self):
-        return self.cam.exposure_time.value
+        if self.cam.exposure_time in self.cam.stage_sigs:
+            return self.cam.stage_sigs[self.cam.exposure_time]
+        else:
+            return self.cam.exposure_time.value
 
     @count_time.setter
     def count_time(self, val):
-        self.cam.exposure_time.put(val)
-        self.cam.acquire_period.put(val + 0.005)
+        self.cam.stage_sigs[self.cam.exposure_time] = val
+        self.cam.stage_sigs[self.cam.acquire_period] = val + 0.005
+        # self.cam.exposure_time.put(val)
+        # self.cam.acquire_period.put(val + 0.005)
