@@ -9,7 +9,7 @@ from ophyd import (Device, Component as Cpt, AreaDetector, TIFFPlugin,
                    HDF5Plugin)
 from ophyd import (EpicsSignal, EpicsSignalRO)
 from ophyd.areadetector import (EpicsSignalWithRBV as SignalWithRBV, CamBase)
-from .utils import makedirs
+from .utils import (makedirs, make_filename_add_subdirectory)
 from .trigger_mixins import HxnModalTrigger
 
 
@@ -99,10 +99,10 @@ class TimepixDetector(HxnModalTrigger, AreaDetector):
 
 class TimepixTiffPlugin(TIFFPlugin, FileStoreTIFF, FileStoreIterativeWrite):
     def make_filename(self):
-        fn, rp, write_path = super().make_filename()
-        if self.parent.make_directories.get():
-            makedirs(write_path)
-        return fn, rp, write_path
+        fn, read_path, write_path = super().make_filename()
+        make_dirs = self.parent.make_directories.get()
+        return make_filename_add_subdirectory(fn, read_path, write_path,
+                                              make_directories=make_dirs)
 
 
 class TimepixFileStoreHDF5(FileStorePluginBase, FileStoreIterativeWrite):
@@ -124,10 +124,10 @@ class TimepixFileStoreHDF5(FileStorePluginBase, FileStoreIterativeWrite):
                                                res_kwargs)
 
     def make_filename(self):
-        fn, rp, write_path = super().make_filename()
+        fn, read_path, write_path = super().make_filename()
         if self.parent.make_directories.get():
-            makedirs(write_path)
-        return fn, rp, write_path
+            makedirs(read_path)
+        return fn, read_path, write_path
 
 
 class HDF5PluginWithFileStore(HDF5Plugin, TimepixFileStoreHDF5):

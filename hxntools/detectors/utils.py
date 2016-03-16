@@ -33,3 +33,32 @@ def ordered_dict_move_to_beginning(od, key):
     od.clear()
     od[key] = value
     od.update(items)
+
+
+def make_filename_add_subdirectory(fn, read_path, write_path, *,
+                                   make_directories=True,
+                                   hash_characters=5):
+    '''
+    tag on a portion of the hash to reduce the number of files in one
+    directory
+
+    Parameters
+    ----------
+    fn : str
+        Filename
+    read_path : str
+        Read path
+    write_path : str
+        Write path
+    make_directories : bool, optional
+        Make directories and set permissions (on the read_path)
+    hash_characters : int, optional
+        Number of characters to use from the hash
+    '''
+    hash_portion = fn[:hash_characters]
+    read_path = os.path.join(read_path, hash_portion, '')
+    write_path = os.path.join(write_path, hash_portion, '')
+
+    if make_directories:
+        makedirs(read_path)
+    return fn, read_path, write_path
