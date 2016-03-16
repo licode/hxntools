@@ -7,7 +7,7 @@ import uuid
 
 import filestore.api as fs_api
 from filestore.api import bulk_insert_datum
-from .utils import (makedirs, DerivedSignal)
+from .utils import makedirs
 
 from collections import OrderedDict
 
@@ -15,7 +15,7 @@ import h5py
 
 from ophyd.areadetector import (DetectorBase, CamBase,
                                 EpicsSignalWithRBV as SignalWithRBV)
-from ophyd import (Signal, EpicsSignal, EpicsSignalRO)
+from ophyd import (Signal, EpicsSignal, EpicsSignalRO, DerivedSignal)
 
 from ophyd import (Device, Component as C, FormattedComponent as FC,
                    DynamicDeviceComponent as DDC)
