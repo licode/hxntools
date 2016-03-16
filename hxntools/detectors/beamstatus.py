@@ -13,13 +13,17 @@ class BeamStatusDetector(Device):
     enabled = Cpt(EpicsSignalRO, 'SR:C03-EPS{PLC:1}Sts:ID_BE_Enbl-Sts')
 
     def __init__(self, prefix='', *, min_current=100.0, read_attrs=None,
+                 configuration_attrs=None,
                  **kwargs):
         self._min_current = min_current
 
+        if configuration_attrs is None:
+            configuration_attrs = ['shutter_status', 'enabled', 'beam_current']
         if read_attrs is None:
             read_attrs = ['beam_current']
 
-        super().__init__(prefix, read_attrs=read_attrs, **kwargs)
+        super().__init__(prefix, configuration_attrs=configuration_attrs,
+                         read_attrs=read_attrs, **kwargs)
 
         self._shutter_ok = None
         self._current_ok = None
