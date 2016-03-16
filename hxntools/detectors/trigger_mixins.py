@@ -126,7 +126,7 @@ class HxnModalTrigger(HxnModalBase, TriggerBase):
         finally:
             self._acquisition_signal.clear_sub(self._acquire_changed)
 
-    def trigger(self):
+    def trigger_internal(self):
         if self._staged != Staged.yes:
             raise RuntimeError("This detector is not ready to trigger."
                                "Call the stage() method before triggering.")
@@ -135,6 +135,21 @@ class HxnModalTrigger(HxnModalBase, TriggerBase):
         self._acquisition_signal.put(1, wait=False)
         self.dispatch(self._image_name, ttime.time())
         return self._status
+
+    def trigger_external(self):
+        # Default implementation is that this is triggered by something else
+        # the 'master detector' that is generating the pulses should implement
+        # this
+        # TODO this used to be in a MasterDetector configuration, not sure how
+        #      this should best be moved around...
+        self._status = DeviceStatus(self)
+        self._status._finished(success=True)
+        return self._status
+
+    def trigger(self):
+        mode = self.mode_settings.mode.get()
+        mode_setup_method = getattr(self, 'trigger_{}'.format(mode))
+        return mode_setup_method()
 
     def _acquire_changed(self, value=None, old_value=None, **kwargs):
         '''This is called when the 'acquire' signal changes.'''
