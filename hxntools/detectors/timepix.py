@@ -86,7 +86,7 @@ class TimepixDetector(HxnModalTrigger, AreaDetector):
     def mode_internal(self):
         super().mode_internal()
 
-        count_time = self.modal_settings.count_time.get()
+        count_time = self.mode_settings.count_time.get()
         self.cam.stage_sigs[self.cam.acquire_time] = count_time
         self.cam.stage_sigs[self.cam.acquire_period] = count_time + 0.005
 
@@ -123,14 +123,14 @@ class TimepixFileStoreHDF5(FileStorePluginBase, FileStoreIterativeWrite):
         self._resource = fsapi.insert_resource(self._spec, self._fn,
                                                res_kwargs)
 
-
-class HDF5PluginWithFileStore(HDF5Plugin, TimepixFileStoreHDF5):
     def make_filename(self):
         fn, rp, write_path = super().make_filename()
         if self.parent.make_directories.get():
             makedirs(write_path)
         return fn, rp, write_path
 
+
+class HDF5PluginWithFileStore(HDF5Plugin, TimepixFileStoreHDF5):
     def stage(self):
         total_points = self.parent.total_points.get()
         self.stage_sigs[self.num_capture] = total_points
@@ -158,5 +158,5 @@ class HxnTimepixDetector(TimepixDetector):
                          **kwargs)
 
         # signal aliases?
-        self.total_points = self.modal_settings.total_points
-        self.make_directories = self.modal_settings.make_directories
+        self.total_points = self.mode_settings.total_points
+        self.make_directories = self.mode_settings.make_directories

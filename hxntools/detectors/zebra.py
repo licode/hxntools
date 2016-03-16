@@ -7,6 +7,8 @@ from ophyd import (Device, Component as Cpt,
 from ophyd import (EpicsSignal, EpicsSignalRO, DeviceStatus)
 from ophyd.utils import set_and_wait
 
+from .trigger_mixins import HxnModalBase
+
 logger = logging.getLogger(__name__)
 
 
@@ -95,13 +97,15 @@ class ZebraPulse(Device):
     time_units = Cpt(EpicsSignalWithRBV, 'PRE', string=True)
     output = Cpt(EpicsSignal, 'OUT')
 
-    input_edge = FC(EpicsSignal, '{self._zebra_prefix}POLARITY:{self._edge_addr}')
+    input_edge = FC(EpicsSignal,
+                    '{self._zebra_prefix}POLARITY:{self._edge_addr}')
 
     _edge_addrs = {1: 'BC',
                    2: 'BD',
                    3: 'BE',
                    4: 'BF',
                    }
+
     def __init__(self, prefix, *, index=None, parent=None, **kwargs):
         zebra = parent
 
@@ -146,7 +150,7 @@ class ZebraOutputType(Device):
 class ZebraFrontOutput12(ZebraOutputBase):
     ttl = Cpt(ZebraOutputType, 'TTL')
     lvds = Cpt(ZebraOutputType, 'LVDS')
-    nim = Cpt(ZebraOutputType,'NIM')
+    nim = Cpt(ZebraOutputType, 'NIM')
 
 
 class ZebraFrontOutput3(ZebraOutputBase):
@@ -208,7 +212,7 @@ class ZebraGate(Device):
         set_and_wait(self.input2.edge, int(edge2))
 
 
-class Zebra(Device):
+class Zebra(HxnModalBase, Device):
     soft_input1 = Cpt(EpicsSignal, 'SOFT_IN:B0')
     soft_input2 = Cpt(EpicsSignal, 'SOFT_IN:B1')
     soft_input3 = Cpt(EpicsSignal, 'SOFT_IN:B2')
@@ -236,17 +240,12 @@ class Zebra(Device):
 
     addresses = ZebraAddresses
 
-    def __init__(self, prefix, *, scan_modes=None, **kwargs):
+    def __init__(self, prefix, **kwargs):
         super().__init__(prefix, **kwargs)
 
         self.pulse = dict(self._get_indexed_devices(ZebraPulse))
         self.output = dict(self._get_indexed_devices(ZebraOutputBase))
         self.gate = dict(self._get_indexed_devices(ZebraGate))
-
-        if scan_modes is None:
-            scan_modes = {}
-
-        self._scan_modes = scan_modes
 
     def _get_indexed_devices(self, cls):
         for attr in self._sub_devices:
@@ -254,33 +253,13 @@ class Zebra(Device):
             if isinstance(dev, cls):
                 yield dev.index, dev
 
-    def step_scan(self):
-        logger.debug('Zebra %s: configuring step-scan mode', self)
+    def mode_step(self):
+        logger.debug('Zebra %s: configuring step-scan mode (%s)', self,
+                     self.mode_settings.get())
 
-    def fly_scan(self):
-        logger.debug('Zebra %s: configuring fly-scan mode', self)
-
-    @property
-    def scan_mode(self):
-        '''The scanning scan_mode'''
-        return self._scan_mode
-
-    @scan_mode.setter
-    def scan_mode(self, scan_mode):
-        try:
-            mode_setup = self._scan_modes[scan_mode]
-        except KeyError:
-            raise ValueError('Unrecognized scan mode {!r}. Available: {}'
-                             ''.format(scan_mode, self._scan_modes.keys()))
-
-        mode_setup()
-        self._scan_mode = scan_mode
-
-    def configure(self, state=None):
-        pass
-
-    def deconfigure(self):
-        pass
+    def mode_fly(self):
+        logger.debug('Zebra %s: configuring fly-scan mode (%s)', self,
+                     self.mode_settings.get())
 
     def trigger(self):
         # Re-implement this to trigger as desired in bluesky
@@ -288,28 +267,10 @@ class Zebra(Device):
         status._finished()
         return status
 
-    def describe(self):
-        return {}
 
-    def read(self):
-        return {}
-
-    def stop(self):
-        pass
-
-
-class HXNZebra(Zebra):
-    def __init__(self, prefix, **kwargs):
-        scan_modes = dict(step_scan=self.step_scan,
-                          fly_scan=self.fly_scan)
-        super().__init__(prefix, scan_modes=scan_modes, **kwargs)
-
-        # NOTE: count_time comes from bluesky
-        self.count_time = None
-        self._mode = None
-
-    def step_scan(self):
-        super().step_scan()
+class HxnZebra(Zebra):
+    def mode_step(self):
+        super().mode_step()
 
         # Scaler triggers all detectors
         # Scaler, output mode 1, LNE (output 5) connected to Zebra IN1_TTL
@@ -350,8 +311,8 @@ class HXNZebra(Zebra):
         # Merlin LVDS
         self.output[1].lvds.put(ZebraAddresses.PULSE1)
 
-    def fly_scan(self):
-        super().fly_scan()
+    def mode_fly(self):
+        super().mode_fly()
 
         self.gate[1].input1.addr.put(ZebraAddresses.IN3_OC)
         self.gate[1].input2.addr.put(ZebraAddresses.IN3_OC)
@@ -373,6 +334,3 @@ class HXNZebra(Zebra):
 
         # Merlin LVDS
         # self.output[1].lvds.put(ZebraAddresses.GATE2)
-
-    def set(self, total_points=None, scan_mode='step_scan', **kwargs):
-        self.scan_mode = scan_mode

@@ -19,50 +19,40 @@ class TriggerBase(BlueskyInterface):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self.stage_sigs.update([(self.cam.acquire, 0),  # If acquiring, stop.
-                                (self.cam.image_mode, 'Multiple'),
-                                ])
+        # If acquiring, stop.
+        self.stage_sigs[self.cam.acquire] = 0
+        self.stage_sigs[self.cam.image_mode] = 'Multiple'
+        self._acquisition_signal = self.cam.acquire
 
         self._status = None
-        self._acquisition_signal = self.cam.acquire
 
 
 class HxnModalSettings(Device):
-    count_time = Cpt(Signal, value=1.0)
-    mode = Cpt(Signal, value='internal')
-    scan_type = Cpt(Signal, value='?')
+    count_time = Cpt(Signal, value=1.0,
+                     doc='Exposure/count time, as specified by bluesky')
+    mode = Cpt(Signal, value='internal',
+               doc='Triggering mode (external/external)')
+    scan_type = Cpt(Signal, value='?',
+                    doc='Scan type (?)')
     make_directories = Cpt(Signal, value=True,
                            doc='Make directories on the DAQ side')
     total_points = Cpt(Signal, value=2,
                        doc='The total number of points to acquire overall')
 
 
-class HxnModalTrigger(Device, TriggerBase):
-    modal_settings = Cpt(HxnModalSettings, '')
-
-    def __init__(self, *args, image_name=None, **kwargs):
-        super().__init__(*args, **kwargs)
-        if image_name is None:
-            image_name = '_'.join([self.name, 'image'])
-        self._image_name = image_name
-
-        # Count time is what the user typed on the command line for the time
-        # parameter (passed in from _set_acquire_time of bluesky)
-        self.modal_settings.count_time.subscribe(self._count_time_set)
+class HxnModalBase(Device):
+    mode_settings = Cpt(HxnModalSettings, '')
 
     @property
     def count_time(self):
-        return self.modal_settings.count_time.get()
+        return self.mode_settings.count_time.get()
 
     @count_time.setter
     def count_time(self, value):
         if value is None:
             return
 
-        self.modal_settings.count_time.put(value)
-
-    def _count_time_set(self, value=0.0, **kwargs):
-        pass
+        self.mode_settings.count_time.put(value)
 
     def mode_setup(self, mode):
         devices = [self] + [getattr(self, attr) for attr in self._sub_devices]
@@ -73,8 +63,34 @@ class HxnModalTrigger(Device, TriggerBase):
                 mode_setup_method()
 
     def mode_internal(self):
-        scan_type = self.modal_settings.scan_type.get()
-        total_points = self.modal_settings.total_points.get()
+        logger.info('%s internal triggering %s', self.name,
+                    self.mode_settings.get())
+
+    def mode_external(self):
+        logger.info('%s external triggering %s', self.name,
+                    self.mode_settings.get())
+
+    @property
+    def mode(self):
+        return self.mode_settings.mode.get()
+
+    def stage(self):
+        self.mode_setup(self.mode)
+        super().stage()
+
+
+class HxnModalTrigger(HxnModalBase, TriggerBase):
+    mode_settings = Cpt(HxnModalSettings, '')
+
+    def __init__(self, *args, image_name=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        if image_name is None:
+            image_name = '_'.join([self.name, 'image'])
+        self._image_name = image_name
+
+    def mode_internal(self):
+        scan_type = self.mode_settings.scan_type.get()
+        total_points = self.mode_settings.total_points.get()
         logger.info('%s internal triggering (scan_type=%s; total_points=%d)',
                     self.name, scan_type, total_points)
         cam = self.cam
@@ -87,8 +103,8 @@ class HxnModalTrigger(Device, TriggerBase):
         self.stage_sigs[cam.trigger_mode] = 'Internal'
 
     def mode_external(self):
-        scan_type = self.modal_settings.scan_type.get()
-        total_points = self.modal_settings.total_points.get()
+        scan_type = self.mode_settings.scan_type.get()
+        total_points = self.mode_settings.total_points.get()
         logger.info('%s external triggering (scan_type=%s; total_points=%d)',
                     self.name, scan_type, total_points)
 
@@ -100,12 +116,7 @@ class HxnModalTrigger(Device, TriggerBase):
         self.stage_sigs[cam.acquire] = 1
         self.stage_sigs.move_to_end(cam.acquire)
 
-    @property
-    def mode(self):
-        return self.modal_settings.mode.get()
-
     def stage(self):
-        self.mode_setup(self.mode)
         self._acquisition_signal.subscribe(self._acquire_changed)
         super().stage()
 
