@@ -1,19 +1,14 @@
 import logging
 
 from boltons.iterutils import chunked
-from bluesky.run_engine import Msg
 from bluesky import (plans, simple_scans)
 from bluesky.standard_config import gs
-from ophyd import (EpicsSignal, Positioner)
+from ophyd import EpicsSignal
+from .detectors.trigger_mixins import HxnModalBase
 
 
 logger = logging.getLogger(__name__)
 
-
-scaler1_output_mode = EpicsSignal('XF:03IDC-ES{Sclr:1}OutputMode',
-                                  name='scaler1_output_mode')
-scaler1_stopall = EpicsSignal('XF:03IDC-ES{Sclr:1}StopAll',
-                              name='scaler1_stopall')
 
 next_scan_id_proc = EpicsSignal('XF:03IDC-ES{Status}NextScanID-Cmd.PROC',
                                 name='next_scan_id_proc')
@@ -32,16 +27,34 @@ def get_next_scan_id():
 
 
 def scan_setup(detectors, total_points):
-    for det in detectors:
-        if not hasattr(det, 'configure'):
-            continue
+    modal_dets = [det for det in detectors
+                  if isinstance(det, HxnModalBase)]
 
-        if isinstance(det, (EpicsSignal, Positioner)):
-            logger.debug('Skipping detector %s', det)
-            continue
+    for det in detectors:
         logger.debug('Setting up detector %s', det)
-        yield Msg('configure', det, scan_type='step_scan',
-                  total_points=total_points)
+        settings = det.mode_settings
+
+        # start by using internal triggering
+        mode = 'internal'
+        settings.mode.put(mode)
+        settings.scan_type.put('step')
+        settings.total_points.put(total_points)
+        det.mode_setup(mode)
+
+    # the mode setup above should update to inform us which detectors
+    # are externally triggered, in the form of the list in
+    #   mode_settings.triggers
+    # so update each of those to use external triggering
+    triggered_dets = [det.mode_settings.triggers.get()
+                      for det in modal_dets]
+    triggered_dets = [triggers for triggers in triggered_dets
+                      if triggers is not None]
+    triggered_dets = set(sum(triggered_dets, []))
+
+    mode = 'external'
+    for det in detectors:
+        det.mode_settings.mode.put(mode)
+        det.mode_setup(mode)
 
 
 class HxnScanMixin1D:

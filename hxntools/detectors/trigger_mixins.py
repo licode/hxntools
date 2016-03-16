@@ -38,6 +38,8 @@ class HxnModalSettings(Device):
                            doc='Make directories on the DAQ side')
     total_points = Cpt(Signal, value=2,
                        doc='The total number of points to acquire overall')
+    triggers = Cpt(Signal, value=None,
+                   doc='Detector instances which this one triggers')
 
 
 class HxnModalBase(Device):

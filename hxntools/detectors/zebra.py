@@ -1,6 +1,5 @@
 from enum import IntEnum
 import logging
-import time
 
 from ophyd import (Device, Component as Cpt,
                    FormattedComponent as FC)

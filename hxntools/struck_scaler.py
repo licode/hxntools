@@ -3,6 +3,7 @@ from ophyd import (EpicsScaler, Device,
                    Component as Cpt, DynamicDeviceComponent as DDC,
                    EpicsSignal, EpicsSignalRO, Signal)
 from ophyd.mca import EpicsMCARecord
+from .detectors.trigger_mixins import HxnModalBase
 
 
 class MinimalCalcRecord(Device):
@@ -100,11 +101,33 @@ class StruckScaler(EpicsScalerWithCalc):
                              for attr in mca_attrs}
 
 
-class HxnScaler(StruckScaler):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+class HxnTriggeringScaler(HxnModalBase, StruckScaler):
+    def __init__(self, prefix, *, scan_type_triggers=None, **kwargs):
+        super().__init__(prefix, **kwargs)
+
+        if scan_type_triggers is None:
+            scan_type_triggers = {'step': [],
+                                  'fly': [],
+                                  }
+
+        self.scan_type_triggers = dict(scan_type_triggers)
 
         # Scaler 1 should be in output mode 1 to properly trigger
         self.stage_sigs[self.output_mode] = 'Mode 1'
         # Ensure that the scaler isn't counting in mcs mode for any reason
         self.stage_sigs[self.stop_all] = 1
+
+    def mode_internal(self):
+        settings = self.mode_settings
+        triggers = self.scan_type_triggers[settings.scan_type]
+        settings.triggers.put(list(triggers))
+
+    def trigger_internal(self):
+        return EpicsScaler.trigger(self)
+
+    def trigger_external(self):
+        raise NotImplementedError()
+
+
+class HxnScaler(StruckScaler):
+    pass
