@@ -7,8 +7,11 @@ from ophyd.areadetector.filestore_mixins import (
     FileStoreIterativeWrite, FileStoreTIFF, FileStorePluginBase)
 
 from .utils import (makedirs, make_filename_add_subdirectory)
-from .trigger_mixins import (HxnModalTrigger, FileStoreBulkReadable)
+from .trigger_mixins import HxnModalTrigger
 import filestore.api as fsapi
+
+# bulk readable optimizations really necessary?
+# from .trigger_mixins import FileStoreBulkReadable
 
 
 logger = logging.getLogger(__name__)
@@ -85,8 +88,9 @@ class HxnMerlinDetector(HxnModalTrigger, MerlinDetector):
     def mode_internal(self):
         logger.info('%s internal triggering (%s)', self.name,
                     self.mode_settings)
-        self.stage_sigs[self.cam.acquire_time] = 0.005
-        self.stage_sigs[self.cam.acquire_period] = 0.006
+        count_time = self.mode_settings.count_time.get()
+        self.stage_sigs[self.cam.acquire_time] = count_time
+        self.stage_sigs[self.cam.acquire_period] = count_time + 0.005
 
     def mode_external(self):
         logger.info('%s external triggering (%s)', self.name,
