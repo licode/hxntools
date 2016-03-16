@@ -5,9 +5,8 @@ import logging
 import itertools
 import uuid
 
-# import itertools
 import filestore.api as fs_api
-from filestore.commands import bulk_insert_datum
+from filestore.api import bulk_insert_datum
 from .utils import (makedirs, DerivedSignal)
 
 from collections import OrderedDict

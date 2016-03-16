@@ -8,7 +8,7 @@ from ophyd.device import (DeviceStatus, BlueskyInterface, Staged)
 # from ophyd.utils import set_and_wait
 from ophyd.areadetector.filestore_mixins import FileStoreIterativeWrite
 
-from filestore.commands import bulk_insert_datum
+from filestore.api import bulk_insert_datum
 from .utils import makedirs
 
 logger = logging.getLogger(__name__)

@@ -13,8 +13,8 @@ class TimepixHDF5Handler(HDF5DatasetSliceHandler):
     frame_per_point : integer, optional
         number of frames to return as one datum, default 1
     """
-    specs = {'AD_HDF5'} | HDF5DatasetSliceHandler.specs
-    HANDLER_NAME = 'AD_HDF5'
+    _handler_name = 'TPX_HDF5'
+    specs = {_handler_name}
 
     # TODO this is only different due to the hardcoded key being different?
     hardcoded_key = '/entry/instrument/detector/data'
@@ -26,5 +26,5 @@ class TimepixHDF5Handler(HDF5DatasetSliceHandler):
 
 def register():
     import filestore.api as fs_api
-    fs_api.register_handler(TimepixHDF5Handler.HANDLER_NAME,
+    fs_api.register_handler(TimepixHDF5Handler._handler_name,
                             TimepixHDF5Handler, overwrite=True)

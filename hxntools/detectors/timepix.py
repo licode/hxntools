@@ -1,15 +1,13 @@
-from __future__ import print_function
 import logging
 
+import filestore.api as fsapi
 from ophyd.areadetector.trigger_mixins import SingleTrigger
 from ophyd.areadetector.filestore_mixins import (FileStoreIterativeWrite,
                                                  FileStoreTIFF,
-                                                 FileStoreHDF5IterativeWrite
+                                                 FileStorePluginBase,
                                                  )
 from ophyd import (Device, Component as Cpt, AreaDetector, TIFFPlugin,
-                   HDF5Plugin,
-
-                   )
+                   HDF5Plugin)
 from ophyd import (Signal, EpicsSignal, EpicsSignalRO)
 from ophyd.areadetector import (EpicsSignalWithRBV as SignalWithRBV, CamBase)
 from .utils import makedirs
@@ -98,7 +96,26 @@ class TimepixTiffPlugin(TIFFPlugin, FileStoreTIFF, FileStoreIterativeWrite):
         return fn, rp, write_path
 
 
-class HDF5PluginWithFileStore(HDF5Plugin, FileStoreHDF5IterativeWrite):
+class TimepixFileStoreHDF5(FileStorePluginBase, FileStoreIterativeWrite):
+    _spec = 'TPX_HDF5'
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.stage_sigs.update([(self.file_template, '%s%s_%6.6d.h5'),
+                                (self.file_write_mode, 'Stream'),
+                                (self.compression, 'zlib'),
+                                (self.capture, 1)
+                                ])
+
+    def stage(self):
+        super().stage()
+        res_kwargs = {'frame_per_point': 1}
+        logger.debug("Inserting resource with filename %s", self._fn)
+        self._resource = fsapi.insert_resource(self._spec, self._fn,
+                                               res_kwargs)
+
+
+class HDF5PluginWithFileStore(HDF5Plugin, TimepixFileStoreHDF5):
     def __init__(self, prefix, **kwargs):
         super().__init__(prefix, **kwargs)
 
@@ -136,14 +153,12 @@ class HxnTimepixDetector(TimepixDetector):
 
     @property
     def count_time(self):
-        if self.cam.exposure_time in self.cam.stage_sigs:
-            return self.cam.stage_sigs[self.cam.exposure_time]
+        if self.cam.acquire_time in self.cam.stage_sigs:
+            return self.cam.stage_sigs[self.cam.acquire_time]
         else:
-            return self.cam.exposure_time.value
+            return self.cam.acquire_time.value
 
     @count_time.setter
     def count_time(self, val):
-        self.cam.stage_sigs[self.cam.exposure_time] = val
+        self.cam.stage_sigs[self.cam.acquire_time] = val
         self.cam.stage_sigs[self.cam.acquire_period] = val + 0.005
-        # self.cam.exposure_time.put(val)
-        # self.cam.acquire_period.put(val + 0.005)
