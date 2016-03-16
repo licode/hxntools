@@ -1,16 +1,16 @@
 import logging
 
 import filestore.api as fsapi
-from ophyd.areadetector.trigger_mixins import SingleTrigger
 from ophyd.areadetector.filestore_mixins import (FileStoreIterativeWrite,
                                                  FileStoreTIFF,
                                                  FileStorePluginBase,
                                                  )
 from ophyd import (Device, Component as Cpt, AreaDetector, TIFFPlugin,
                    HDF5Plugin)
-from ophyd import (Signal, EpicsSignal, EpicsSignalRO)
+from ophyd import (EpicsSignal, EpicsSignalRO)
 from ophyd.areadetector import (EpicsSignalWithRBV as SignalWithRBV, CamBase)
 from .utils import makedirs
+from .trigger_mixins import HxnModalTrigger
 
 
 logger = logging.getLogger(__name__)
@@ -74,7 +74,7 @@ class TimepixDetectorCam(CamBase):
     tpx_trigger = Cpt(EpicsSignal, 'TPXTrigger')
 
 
-class TimepixDetector(SingleTrigger, AreaDetector):
+class TimepixDetector(HxnModalTrigger, AreaDetector):
     _html_docs = []
     cam = Cpt(TimepixDetectorCam, 'cam1:',
               read_attrs=[],
@@ -82,10 +82,19 @@ class TimepixDetector(SingleTrigger, AreaDetector):
                                    'tpx_dac_file', 'tpx_dev_ip', 'tpx_hw_file',
                                    'tpx_system_id', 'tpx_pix_config_file',
                                    ])
-    total_points = Cpt(Signal, value=2,
-                       doc='The total number of points to acquire overall')
-    make_directories = Cpt(Signal, value=True,
-                           doc='Make directories on the DAQ side')
+
+    def mode_internal(self):
+        super().mode_internal()
+
+        count_time = self.modal_settings.count_time.get()
+        self.cam.stage_sigs[self.cam.acquire_time] = count_time
+        self.cam.stage_sigs[self.cam.acquire_period] = count_time + 0.005
+
+        self.stage_sigs.move_to_end(self.cam.acquire)
+
+    def mode_external(self):
+        raise RuntimeError('Timepix external triggering not supported '
+                           'reliably')
 
 
 class TimepixTiffPlugin(TIFFPlugin, FileStoreTIFF, FileStoreIterativeWrite):
@@ -148,14 +157,6 @@ class HxnTimepixDetector(TimepixDetector):
         super().__init__(prefix, configuration_attrs=configuration_attrs,
                          **kwargs)
 
-    @property
-    def count_time(self):
-        if self.cam.acquire_time in self.cam.stage_sigs:
-            return self.cam.stage_sigs[self.cam.acquire_time]
-        else:
-            return self.cam.acquire_time.value
-
-    @count_time.setter
-    def count_time(self, val):
-        self.cam.stage_sigs[self.cam.acquire_time] = val
-        self.cam.stage_sigs[self.cam.acquire_period] = val + 0.005
+        # signal aliases?
+        self.total_points = self.modal_settings.total_points
+        self.make_directories = self.modal_settings.make_directories

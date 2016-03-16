@@ -85,3 +85,15 @@ class DerivedSignal(Signal):
     def _repr_info(self):
         yield from super()._repr_info()
         yield ('derived_from', self._derived_from)
+
+
+def ordered_dict_move_to_beginning(od, key):
+    if key not in od:
+        return
+
+    value = od[key]
+    items = list((k, v) for k, v in od.items()
+                 if k != key)
+    od.clear()
+    od[key] = value
+    od.update(items)
