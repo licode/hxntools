@@ -116,9 +116,6 @@ class TimepixFileStoreHDF5(FileStorePluginBase, FileStoreIterativeWrite):
 
 
 class HDF5PluginWithFileStore(HDF5Plugin, TimepixFileStoreHDF5):
-    def __init__(self, prefix, **kwargs):
-        super().__init__(prefix, **kwargs)
-
     def make_filename(self):
         fn, rp, write_path = super().make_filename()
         if self.parent.make_directories.get():

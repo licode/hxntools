@@ -76,6 +76,7 @@ class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
         # Use the EpicsSignal file_template from the detector
         self.stage_sigs[self.blocking_callbacks] = 1
         self.stage_sigs[self.enable] = 1
+        self.stage_sigs[self.compression] = 'zlib'
         self.stage_sigs[self.file_template] = '%s%s_%6.6d.h5'
 
         self._filestore_res = None
