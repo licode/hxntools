@@ -139,11 +139,6 @@ class HxnModalTrigger(HxnModalBase, TriggerBase):
         return self._status
 
     def trigger_external(self):
-        # Default implementation is that this is triggered by something else
-        # the 'master detector' that is generating the pulses should implement
-        # this
-        # TODO this used to be in a MasterDetector configuration, not sure how
-        #      this should best be moved around...
         self._status = DeviceStatus(self)
         self._status._finished(success=True)
         return self._status
