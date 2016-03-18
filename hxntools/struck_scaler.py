@@ -59,7 +59,7 @@ class StruckScaler(EpicsScalerWithCalc):
     acquiring = Cpt(EpicsSignal, 'Acquiring')
     asyn = Cpt(EpicsSignal, 'Asyn')
     channel1_source = Cpt(EpicsSignal, 'Channel1Source')
-    channel_advance = Cpt(EpicsSignal, 'ChannelAdvance')
+    channel_advance = Cpt(EpicsSignal, 'ChannelAdvance', string=True)
     client_wait = Cpt(EpicsSignal, 'ClientWait')
     count_on_start = Cpt(EpicsSignal, 'CountOnStart')
     current_channel = Cpt(EpicsSignal, 'CurrentChannel')
@@ -121,6 +121,11 @@ class HxnTriggeringScaler(HxnModalBase, StruckScaler):
         settings = self.mode_settings
         triggers = self.scan_type_triggers[settings.scan_type]
         settings.triggers.put(list(triggers))
+
+    def mode_external(self):
+        self.stage_sigs[self.channel_advance] = 'External'
+        self.stage_sigs[self.input_mode] = 'Mode 2'
+        self.erase_start.put(1)
 
     def trigger_internal(self):
         return EpicsScaler.trigger(self)
