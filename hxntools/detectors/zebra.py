@@ -252,13 +252,13 @@ class Zebra(HxnModalBase, Device):
             if isinstance(dev, cls):
                 yield dev.index, dev
 
-    def mode_step(self):
-        logger.debug('Zebra %s: configuring step-scan mode (%s)', self,
-                     self.mode_settings.get())
+    def mode_internal(self):
+        logger.debug('Zebra %s: configuring internal triggering mode (%s)',
+                     self, self.mode_settings.get())
 
-    def mode_fly(self):
-        logger.debug('Zebra %s: configuring fly-scan mode (%s)', self,
-                     self.mode_settings.get())
+    def mode_external(self):
+        logger.debug('Zebra %s: configuring external triggering mode (%s)',
+                     self, self.mode_settings.get())
 
     def trigger(self):
         # Re-implement this to trigger as desired in bluesky
@@ -268,68 +268,78 @@ class Zebra(HxnModalBase, Device):
 
 
 class HxnZebra(Zebra):
-    def mode_step(self):
-        super().mode_step()
+    def mode_internal(self):
+        super().mode_internal()
 
-        # Scaler triggers all detectors
-        # Scaler, output mode 1, LNE (output 5) connected to Zebra IN1_TTL
-        # Pulse 1 has pulse width set to the count_time
+        scan_type = self.mode_settings.scan_type.get()
+        raise ValueError('Unknown scan type for internal triggering: '
+                         '{}'.format(scan_type))
 
-        # OUT1_TTL Merlin
-        # OUT2_TTL Scaler 1 inhibit
-        #
-        # OUT3_TTL Scaler 1 gate
-        # OUT4_TTL Xspress3
-        self.pulse[1].input_addr.put(ZebraAddresses.IN1_TTL)
+    def mode_external(self):
+        super().mode_external()
 
-        if self.count_time is not None:
-            logger.debug('Step scan pulse-width is %s', self.count_time)
-            self.pulse[1].width.put(ZebraAddresses.count_time)
-            self.pulse[1].time_units.put('s')
+        scan_type = self.mode_settings.scan_type.get()
+        if scan_type == 'fly':
+            self.gate[1].input1.addr.put(ZebraAddresses.IN3_OC)
+            self.gate[1].input2.addr.put(ZebraAddresses.IN3_OC)
+            self.gate[1].set_input_edges(1, 0)
 
-        self.pulse[1].delay.put(0.0)
-        self.pulse[1].input_edge.put(1)
+            # timepix:
+            # self.output[1].ttl = self.GATE1
+            # merlin:
+            # (Merlin is now on TTL 1 output, replacing timepix 1)
+            self.output[1].ttl.put(ZebraAddresses.GATE2)
+            self.output[2].ttl.put(ZebraAddresses.GATE1)
 
-        # To be used in regular scaler mode, scaler 1 has to have
-        # inhibit cleared and counting enabled:
-        self.soft_input4.addr.put(1)
+            self.gate[2].input1.addr.put(ZebraAddresses.IN3_OC)
+            self.gate[2].input2.addr.put(ZebraAddresses.IN3_OC)
+            self.gate[2].set_input_edges(0, 1)
 
-        # Timepix
-        # self.output[1].ttl = self.PULSE1
-        # Merlin
-        self.output[1].ttl.put(ZebraAddresses.PULSE1)
-        self.output[2].ttl.put(ZebraAddresses.SOFT_IN4)
+            self.output[3].ttl.put(ZebraAddresses.GATE2)
+            self.output[4].ttl.put(ZebraAddresses.GATE2)
 
-        self.gate[2].input1.addr.put(ZebraAddresses.PULSE1)
-        self.gate[2].input2.addr.put(ZebraAddresses.PULSE1)
-        self.gate[2].set_input_edges(0, 1)
+            # Merlin LVDS
+            # self.output[1].lvds.put(ZebraAddresses.GATE2)
 
-        self.output[3].ttl.put(ZebraAddresses.SOFT_IN4)
-        self.output[4].ttl.put(ZebraAddresses.GATE2)
+        elif scan_type == 'step':
+            # Scaler triggers all detectors
+            # Scaler, output mode 1, LNE (output 5) connected to Zebra IN1_TTL
+            # Pulse 1 has pulse width set to the count_time
 
-        # Merlin LVDS
-        self.output[1].lvds.put(ZebraAddresses.PULSE1)
+            # OUT1_TTL Merlin
+            # OUT2_TTL Scaler 1 inhibit
+            #
+            # OUT3_TTL Scaler 1 gate
+            # OUT4_TTL Xspress3
+            self.pulse[1].input_addr.put(ZebraAddresses.IN1_TTL)
 
-    def mode_fly(self):
-        super().mode_fly()
+            if self.count_time is not None:
+                logger.debug('Step scan pulse-width is %s', self.count_time)
+                self.pulse[1].width.put(ZebraAddresses.count_time)
+                self.pulse[1].time_units.put('s')
 
-        self.gate[1].input1.addr.put(ZebraAddresses.IN3_OC)
-        self.gate[1].input2.addr.put(ZebraAddresses.IN3_OC)
-        self.gate[1].set_input_edges(1, 0)
+            self.pulse[1].delay.put(0.0)
+            self.pulse[1].input_edge.put(1)
 
-        # timepix:
-        # self.output[1].ttl = self.GATE1
-        # merlin:
-        # (Merlin is now on TTL 1 output, replacing timepix 1)
-        self.output[1].ttl.put(ZebraAddresses.GATE2)
-        self.output[2].ttl.put(ZebraAddresses.GATE1)
+            # To be used in regular scaler mode, scaler 1 has to have
+            # inhibit cleared and counting enabled:
+            self.soft_input4.addr.put(1)
 
-        self.gate[2].input1.addr.put(ZebraAddresses.IN3_OC)
-        self.gate[2].input2.addr.put(ZebraAddresses.IN3_OC)
-        self.gate[2].set_input_edges(0, 1)
+            # Timepix
+            # self.output[1].ttl = self.PULSE1
+            # Merlin
+            self.output[1].ttl.put(ZebraAddresses.PULSE1)
+            self.output[2].ttl.put(ZebraAddresses.SOFT_IN4)
 
-        self.output[3].ttl.put(ZebraAddresses.GATE2)
-        self.output[4].ttl.put(ZebraAddresses.GATE2)
+            self.gate[2].input1.addr.put(ZebraAddresses.PULSE1)
+            self.gate[2].input2.addr.put(ZebraAddresses.PULSE1)
+            self.gate[2].set_input_edges(0, 1)
 
-        # Merlin LVDS
-        # self.output[1].lvds.put(ZebraAddresses.GATE2)
+            self.output[3].ttl.put(ZebraAddresses.SOFT_IN4)
+            self.output[4].ttl.put(ZebraAddresses.GATE2)
+
+            # Merlin LVDS
+            self.output[1].lvds.put(ZebraAddresses.PULSE1)
+        else:
+            raise ValueError('Unknown scan type for external triggering: '
+                             '{}'.format(scan_type))
