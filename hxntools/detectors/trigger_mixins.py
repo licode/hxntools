@@ -7,10 +7,11 @@ import uuid
 from ophyd.device import (DeviceStatus, BlueskyInterface, Staged,
                           Component as Cpt, Device)
 from ophyd import (Signal, )
-from ophyd.areadetector.filestore_mixins import FileStoreIterativeWrite
+from ophyd.areadetector.filestore_mixins import FileStoreBulkWrite
 
 from filestore.api import bulk_insert_datum
-from .utils import (makedirs, ordered_dict_move_to_beginning)
+from .utils import (ordered_dict_move_to_beginning,
+                    make_filename_add_subdirectory)
 
 logger = logging.getLogger(__name__)
 
@@ -82,8 +83,6 @@ class HxnModalBase(Device):
 
 
 class HxnModalTrigger(HxnModalBase, TriggerBase):
-    mode_settings = Cpt(HxnModalSettings, '')
-
     def __init__(self, *args, image_name=None, **kwargs):
         super().__init__(*args, **kwargs)
         if image_name is None:
@@ -95,14 +94,14 @@ class HxnModalTrigger(HxnModalBase, TriggerBase):
         total_points = self.mode_settings.total_points.get()
         logger.info('%s internal triggering (scan_type=%s; total_points=%d)',
                     self.name, scan_type, total_points)
+
         cam = self.cam
+        cam.stage_sigs[cam.acquire] = 0
+        ordered_dict_move_to_beginning(cam.stage_sigs, cam.acquire)
 
-        self.stage_sigs[cam.acquire] = 0
-        ordered_dict_move_to_beginning(self.stage_sigs, cam.acquire)
-
-        self.stage_sigs[cam.num_images] = 1
-        self.stage_sigs[cam.image_mode] = 'Single'
-        self.stage_sigs[cam.trigger_mode] = 'Internal'
+        cam.stage_sigs[cam.num_images] = 1
+        cam.stage_sigs[cam.image_mode] = 'Single'
+        cam.stage_sigs[cam.trigger_mode] = 'Internal'
 
     def mode_external(self):
         scan_type = self.mode_settings.scan_type.get()
@@ -111,12 +110,14 @@ class HxnModalTrigger(HxnModalBase, TriggerBase):
                     self.name, scan_type, total_points)
 
         cam = self.cam
-        self.stage_sigs[cam.num_images] = total_points
-        self.stage_sigs[cam.image_mode] = 'Multiple'
-        self.stage_sigs[cam.trigger_mode] = 'External'
+        cam.stage_sigs[cam.num_images] = total_points
+        cam.stage_sigs[cam.image_mode] = 'Multiple'
+        cam.stage_sigs[cam.trigger_mode] = 'External'
 
-        self.stage_sigs[cam.acquire] = 1
-        self.stage_sigs.move_to_end(cam.acquire)
+        # TODO: detector.stage_sigs happen first, all plugin stage_sigs
+        #       happen after, making this potentially problematic
+        cam.stage_sigs[cam.acquire] = 1
+        cam.stage_sigs.move_to_end(cam.acquire)
 
     def stage(self):
         self._acquisition_signal.subscribe(self._acquire_changed)
@@ -157,26 +158,25 @@ class HxnModalTrigger(HxnModalBase, TriggerBase):
             self._status._finished()
 
 
-class FileStoreBulkReadable(FileStoreIterativeWrite):
-    def __init__(self, *args, **kwargs):
-        self._write_path_template = None
-        super().__init__(*args, **kwargs)
-
+class FileStoreBulkReadable(FileStoreBulkWrite):
     def make_filename(self):
         fn, read_path, write_path = super().make_filename()
-
-        # tag on a portion of the hash to reduce the number of files in one
-        # directory
-        hash_portion = fn[:5]
-        read_path = os.path.join(read_path, hash_portion, '')
-        write_path = os.path.join(write_path, hash_portion, '')
-
-        makedirs(read_path, mode=0o777)
-        return fn, read_path, write_path
+        make_dirs = self.parent.mode_settings.make_directories.get()
+        return make_filename_add_subdirectory(fn, read_path, write_path,
+                                              make_directories=make_dirs)
 
     def bulk_read(self, timestamps):
-        # TODO update
-        uids = list(str(uuid.uuid4()) for ts in timestamps)
-        datum_args = (dict(point_number=i) for i in range(len(uids)))
+        image_name = self.image_name
+        uids = [self.generate_datum(self.image_name, ts) for ts in timestamps]
+        datum_args = [self._datum_kwargs_map[uid] for uid in uids]
+
         bulk_insert_datum(self._resource, uids, datum_args)
-        return {self.parent._image_name: uids}
+
+        # clear so unstage will not save the images twice:
+        self._datum_uids.clear()
+        self._datum_kwargs_map.clear()
+        return {image_name: uids}
+
+    @property
+    def image_name(self):
+        return self.parent._image_name

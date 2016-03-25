@@ -2,16 +2,13 @@ from __future__ import print_function
 import logging
 
 from ophyd import (AreaDetector, CamBase, TIFFPlugin, Component as Cpt,
-                   HDF5Plugin)
+                   HDF5Plugin, Device)
 from ophyd.areadetector.filestore_mixins import (
     FileStoreIterativeWrite, FileStoreTIFF, FileStorePluginBase)
 
 from .utils import (makedirs, make_filename_add_subdirectory)
-from .trigger_mixins import HxnModalTrigger
+from .trigger_mixins import (HxnModalTrigger, FileStoreBulkReadable)
 import filestore.api as fsapi
-
-# bulk readable optimizations really necessary?
-# from .trigger_mixins import FileStoreBulkReadable
 
 
 logger = logging.getLogger(__name__)
@@ -20,12 +17,18 @@ logger = logging.getLogger(__name__)
 # num_capture.put(self._total_points)  # <-- set to 0
 
 
-class MerlinTiffPlugin(TIFFPlugin, FileStoreTIFF, FileStoreIterativeWrite):
-    def make_filename(self):
-        fn, read_path, write_path = super().make_filename()
-        make_dirs = self.parent.make_directories.get()
-        return make_filename_add_subdirectory(fn, read_path, write_path,
-                                              make_directories=make_dirs)
+class MerlinTiffPlugin(TIFFPlugin, FileStoreBulkReadable, FileStoreTIFF,
+                       Device):
+    def mode_external(self):
+        total_points = self.parent.mode_settings.total_points.get()
+        self.stage_sigs[self.num_capture] = total_points
+
+    def get_frames_per_point(self):
+        mode = self.parent.mode_settings.mode.get()
+        if mode == 'external':
+            return 1
+        else:
+            return self.parent.cam.num_images.get()
 
 
 class MerlinDetectorCam(CamBase):

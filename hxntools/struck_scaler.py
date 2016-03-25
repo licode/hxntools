@@ -125,7 +125,10 @@ class HxnTriggeringScaler(HxnModalBase, StruckScaler):
     def mode_external(self):
         self.stage_sigs[self.channel_advance] = 'External'
         self.stage_sigs[self.input_mode] = 'Mode 2'
-        self.erase_start.put(1)
+        self.stage_sigs[self.nuse_all] = self.mode_settings.total_points.get()
+
+        self.stage_sigs[self.erase_start] = 1
+        self.stage_sigs.move_to_end(self.erase_start)
 
     def trigger_internal(self):
         return EpicsScaler.trigger(self)

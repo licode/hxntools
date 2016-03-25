@@ -9,8 +9,8 @@ from ophyd import (Device, Component as Cpt, AreaDetector, TIFFPlugin,
                    HDF5Plugin)
 from ophyd import (EpicsSignal, EpicsSignalRO)
 from ophyd.areadetector import (EpicsSignalWithRBV as SignalWithRBV, CamBase)
-from .utils import (makedirs, make_filename_add_subdirectory)
-from .trigger_mixins import HxnModalTrigger
+from .utils import makedirs
+from .trigger_mixins import (HxnModalTrigger, FileStoreBulkReadable)
 
 
 logger = logging.getLogger(__name__)
@@ -97,12 +97,18 @@ class TimepixDetector(HxnModalTrigger, AreaDetector):
                            'reliably')
 
 
-class TimepixTiffPlugin(TIFFPlugin, FileStoreTIFF, FileStoreIterativeWrite):
-    def make_filename(self):
-        fn, read_path, write_path = super().make_filename()
-        make_dirs = self.parent.make_directories.get()
-        return make_filename_add_subdirectory(fn, read_path, write_path,
-                                              make_directories=make_dirs)
+class TimepixTiffPlugin(TIFFPlugin, FileStoreBulkReadable, FileStoreTIFF,
+                        Device):
+    def mode_external(self):
+        total_points = self.parent.mode_settings.total_points.get()
+        self.stage_sigs[self.num_capture] = total_points
+
+    def get_frames_per_point(self):
+        mode = self.parent.mode_settings.mode.get()
+        if mode == 'external':
+            return 1
+        else:
+            return self.parent.cam.num_images.get()
 
 
 class TimepixFileStoreHDF5(FileStorePluginBase, FileStoreIterativeWrite):
