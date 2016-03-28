@@ -1,7 +1,8 @@
 import numpy as np
 
 
-def spiral_simple(x_range_egu, y_range_egu, dr_egu, nth):
+def spiral_simple(x_range_egu, y_range_egu, dr_egu, nth, *,
+                  num_exposures=10):
     """
     Spiral scan pattern 1
 
@@ -36,10 +37,13 @@ def spiral_simple(x_range_egu, y_range_egu, dr_egu, nth):
                 x_points.append(x_egu)
                 y_points.append(y_egu)
 
+    x_points = sum(([x] * num_exposures for x in x_points), [])
+    y_points = sum(([y] * num_exposures for y in y_points), [])
     return x_points, y_points
 
 
-def spiral_fermat(x_range_egu, y_range_egu, dr_egu, factor):
+def spiral_fermat(x_range_egu, y_range_egu, dr_egu, factor, *,
+                  num_exposures=10):
     """Fermat spiral scan pattern
 
     Parameters
@@ -72,4 +76,6 @@ def spiral_fermat(x_range_egu, y_range_egu, dr_egu, factor):
             x_points.append(x_egu)
             y_points.append(y_egu)
 
+    x_points = sum(([x] * num_exposures for x in x_points), [])
+    y_points = sum(([y] * num_exposures for y in y_points), [])
     return x_points, y_points
