@@ -114,11 +114,6 @@ class HxnModalTrigger(HxnModalBase, TriggerBase):
         cam.stage_sigs[cam.image_mode] = 'Multiple'
         cam.stage_sigs[cam.trigger_mode] = 'External'
 
-        # TODO: detector.stage_sigs happen first, all plugin stage_sigs
-        #       happen after, making this potentially problematic
-        cam.stage_sigs[cam.acquire] = 1
-        cam.stage_sigs.move_to_end(cam.acquire)
-
     def stage(self):
         self._acquisition_signal.subscribe(self._acquire_changed)
         super().stage()
@@ -140,8 +135,13 @@ class HxnModalTrigger(HxnModalBase, TriggerBase):
         return self._status
 
     def trigger_external(self):
+        if self._staged != Staged.yes:
+            raise RuntimeError("This detector is not ready to trigger."
+                               "Call the stage() method before triggering.")
+
         self._status = DeviceStatus(self)
-        self._status._finished(success=True)
+        self._acquisition_signal.put(1, wait=False)
+        # self.dispatch(self._image_name, ttime.time())
         return self._status
 
     def trigger(self):
