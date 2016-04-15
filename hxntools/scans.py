@@ -2,11 +2,12 @@ import logging
 
 from boltons.iterutils import chunked
 from bluesky import (plans, simple_scans)
-from bluesky.standard_config import gs
+from bluesky.global_state import get_gs
 from ophyd import EpicsSignal
 from .detectors.trigger_mixins import HxnModalBase
 
 
+gs = get_gs()
 logger = logging.getLogger(__name__)
 
 
