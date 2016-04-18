@@ -521,7 +521,7 @@ class Xspress3Detector(DetectorBase):
     data_key = XRF_DATA_KEY
 
     def __init__(self, prefix, *, read_attrs=None, configuration_attrs=None,
-                 monitor_attrs=None, name=None, parent=None,
+                 name=None, parent=None,
                  # to remove?
                  file_path='', ioc_file_path='', default_channels=None,
                  channel_prefix=None,
@@ -537,7 +537,6 @@ class Xspress3Detector(DetectorBase):
 
         super().__init__(prefix, read_attrs=read_attrs,
                          configuration_attrs=configuration_attrs,
-                         monitor_attrs=monitor_attrs,
                          name=name, parent=parent, **kwargs)
 
         # get all sub-device instances
