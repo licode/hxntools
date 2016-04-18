@@ -1,7 +1,7 @@
 import time
 from ophyd import (Device, Component as Cpt, FormattedComponent as FC)
-from ophyd import (EpicsSignal, EpicsSignalRO, DeviceStatus)
-from ophyd.utils import (set_and_wait, TimeoutError)
+from ophyd import (EpicsMotor, EpicsSignal, EpicsSignalRO, DeviceStatus)
+from ophyd.utils import set_and_wait
 
 
 anc350_dc_controllers = [2, 3, 4, 7]
@@ -18,13 +18,11 @@ anc350_axis_counts = {1: 6,
 
 
 class Anc350Axis(Device):
-    motor = Cpt(EpicsSignal, 'Mtr')
+    motor = Cpt(EpicsMotor, 'Mtr')
     desc = Cpt(EpicsSignal, 'Mtr.DESC')
-    frequency = Cpt(EpicsSignal, 'Freq-SP')
-    frequency_rbv = Cpt(EpicsSignal, 'Freq-I')
+    frequency = Cpt(EpicsSignal, 'Freq-I', write_pv='Freq-SP')
 
-    amplitude = Cpt(EpicsSignal, 'Ampl-SP')
-    amplitude_rbv = Cpt(EpicsSignal, 'Ampl-I')
+    amplitude = Cpt(EpicsSignal, 'Ampl-I', write_pv='Ampl-SP')
 
     def __init__(self, prefix, *, axis_num=None, **kwargs):
         self.axis_num = int(axis_num)
@@ -32,13 +30,9 @@ class Anc350Axis(Device):
 
 
 class Anc350Controller(Device):
-    dc_period = Cpt(EpicsSignal, 'DCPer-SP')
-    dc_off_time = Cpt(EpicsSignal, 'DCOff-SP')
-    dc_enable = Cpt(EpicsSignal, 'DC-Cmd')
-
-    dc_period_rbv = Cpt(EpicsSignalRO, 'DCPer-I')
-    dc_off_time_rbv = Cpt(EpicsSignalRO, 'DCOff-I')
-    dc_enable_rbv = Cpt(EpicsSignalRO, 'DC-I')
+    dc_period = Cpt(EpicsSignal, 'DCPer-I', write_pv='DCPer-SP')
+    dc_off_time = Cpt(EpicsSignal, 'DCOff-I', write_pv='DCOff-SP')
+    dc_enable = Cpt(EpicsSignal, 'DC-I', write_pv='DC-Cmd')
 
     def __init__(self, prefix, **kwargs):
         super(Anc350Controller, self).__init__(prefix, **kwargs)
@@ -52,27 +46,13 @@ class Anc350Controller(Device):
         self.dc_off_time.put(off_time)
 
         if verify:
-            _wait_tries(self.dc_period_rbv, period)
-            if period != self.dc_period_rbv.get():
-                msg = ('Period not set correctly ({} != {})'
-                       ''.format(period, self.dc_period_rbv.get()))
-                raise RuntimeError('Period not set correctly')
-
-            _wait_tries(self.dc_off_time_rbv, off_time)
-            if off_time != self.dc_off_time_rbv.get():
-                msg = ('Off time not set correctly ({} != {})'
-                       ''.format(off_time, self.dc_off_time_rbv.get()))
-
-                raise RuntimeError(msg)
+            set_and_wait(self.dc_period, period)
+            set_and_wait(self.dc_off_time, off_time)
 
         self.dc_enable.put(enable)
 
         if verify:
-            _wait_tries(self.dc_enable, enable)
-            if enable != self.dc_enable.get():
-                msg = ('DC not enabled correctly ({} != {})'
-                       ''.format(enable, self.dc_enable_rbv.get()))
-                raise RuntimeError(msg)
+            set_and_wait(self.dc_enable, enable)
 
 
 class HxnAnc350Axis(Anc350Axis):
@@ -101,6 +81,7 @@ def _dc_status(controller, axis):
 def _wait_tries(signal, value, tries=20, period=0.1):
     '''Wait up to `tries * period` for signal.get() to equal value'''
 
+    # TODO set_and_wait?
     while tries > 0:
         tries -= 1
         if signal.get() == value:
@@ -111,9 +92,8 @@ def _wait_tries(signal, value, tries=20, period=0.1):
 
 def _dc_toggle(axis, enable, freq, dc_period, off_time):
     print('Axis {} {}: '.format(axis.axis_num, axis.desc.value), end='')
-    axis.frequency.put(freq)
-    _wait_tries(axis.frequency_rbv, freq)
-    print('frequency={}'.format(axis.frequency_rbv.value))
+    set_and_wait(axis.frequency, freq)
+    print('frequency={}'.format(axis.frequency.get()))
 
 
 def dc_toggle(enable, controllers=None, freq=100, dc_period=20, off_time=10):
@@ -134,8 +114,8 @@ def dc_toggle(enable, controllers=None, freq=100, dc_period=20, off_time=10):
         else:
             if enable:
                 print('Enabled duty cycling ({} off/{} on)'.format(
-                      controller.dc_off_time_rbv.value,
-                      controller.dc_period.value))
+                      controller.dc_off_time.get(),
+                      controller.dc_period.get()))
             else:
                 print('Disabled duty cycling')
 
