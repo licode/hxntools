@@ -1,9 +1,9 @@
 import logging
 
 from boltons.iterutils import chunked
-from bluesky import (plans, simple_scans)
+from bluesky import plans
 from bluesky.global_state import get_gs
-from ophyd import EpicsSignal
+from ophyd import (Device, Component as Cpt, EpicsSignal)
 from .detectors.trigger_mixins import HxnModalBase
 
 
@@ -11,20 +11,26 @@ gs = get_gs()
 logger = logging.getLogger(__name__)
 
 
-next_scan_id_proc = EpicsSignal('XF:03IDC-ES{Status}NextScanID-Cmd.PROC',
-                                name='next_scan_id_proc')
-scan_id = EpicsSignal('XF:03IDC-ES{Status}ScanID-I',
-                      name='scan_id')
+class ScanID(Device):
+    next_scan_id_proc = Cpt(EpicsSignal, 'NextScanID-Cmd.PROC')
+    scan_id = Cpt(EpicsSignal, 'ScanID-I')
+
+    def get_next_scan_id(self):
+        last_id = int(self.scan_id.get())
+        self.next_scan_id_proc.put(1, wait=True)
+
+        new_id = int(self.scan_id.get())
+        if last_id == new_id:
+            raise RuntimeError('Scan ID unchanged. Check hxnutil IOC.')
+        return new_id
+
+
+dev_scan_id = ScanID('XF:03IDC-ES{Status}', name='dev_scan_id')
 
 
 def get_next_scan_id():
-    last_id = int(scan_id.get(use_monitor=False))
-    next_scan_id_proc.put(1, wait=True)
-
-    new_id = int(scan_id.get(use_monitor=False))
-    if last_id == new_id:
-        raise RuntimeError('Scan ID unchanged. Check hxnutil IOC.')
-    return new_id
+    dev_scan_id.wait_for_connection()
+    return dev_scan_id.get_next_scan_id()
 
 
 def scan_setup(detectors, total_points):
