@@ -62,14 +62,16 @@ class MerlinFileStoreHDF5(FileStorePluginBase, FileStoreIterativeWrite):
 
     def make_filename(self):
         fn, read_path, write_path = super().make_filename()
-        if self.parent.make_directories.get():
+        mode_settings = self.parent.mode_settings
+        if mode_settings.make_directories.get():
             makedirs(read_path)
         return fn, read_path, write_path
 
 
 class HDF5PluginWithFileStore(HDF5Plugin, MerlinFileStoreHDF5):
     def stage(self):
-        total_points = self.parent.total_points.get()
+        mode_settings = self.parent.mode_settings
+        total_points = mode_settings.total_points.get()
         self.stage_sigs[self.num_capture] = total_points
 
         # ensure that setting capture is the last thing that's done
