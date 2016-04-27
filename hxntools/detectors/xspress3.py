@@ -73,6 +73,7 @@ class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
         super().__init__(basename, parent=parent, **kwargs)
         det = parent
         self.settings = det.settings
+
         # Use the EpicsSignal file_template from the detector
         self.stage_sigs[self.blocking_callbacks] = 1
         self.stage_sigs[self.enable] = 1
@@ -248,14 +249,6 @@ class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
     def configure(self, total_points=0, master=None, external_trig=False,
                   **kwargs):
         raise NotImplementedError()
-
-    @property
-    def count_time(self):
-        return self.settings.acquire_period.value
-
-    @count_time.setter
-    def count_time(self, val):
-        self.settings.acquire_period.put(val)
 
     def describe(self):
         # should this use a better value?
@@ -642,6 +635,9 @@ class XspressTrigger(BlueskyInterface):
 
     `acquire_changed(self, value=None, old_value=None, **kwargs)`
     """
+    # TODO **
+    # count_time = self.settings.acquire_period
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # settings

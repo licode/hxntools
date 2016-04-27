@@ -119,7 +119,9 @@ class HxnTriggeringScaler(HxnModalBase, StruckScaler):
 
     def mode_internal(self):
         settings = self.mode_settings
-        triggers = self.scan_type_triggers[settings.scan_type]
+        scan_type = settings.scan_type.get()
+
+        triggers = self.scan_type_triggers[scan_type]
         settings.triggers.put(list(triggers))
 
     def mode_external(self):
@@ -131,6 +133,7 @@ class HxnTriggeringScaler(HxnModalBase, StruckScaler):
         self.stage_sigs.move_to_end(self.erase_start)
 
     def trigger_internal(self):
+        print('scaler trigger!')
         return EpicsScaler.trigger(self)
 
     def trigger_external(self):

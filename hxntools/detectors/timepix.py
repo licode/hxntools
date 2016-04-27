@@ -86,7 +86,7 @@ class TimepixDetector(HxnModalTrigger, AreaDetector):
     def mode_internal(self):
         super().mode_internal()
 
-        count_time = self.mode_settings.count_time.get()
+        count_time = self.count_time.get()
         self.cam.stage_sigs[self.cam.acquire_time] = count_time
         self.cam.stage_sigs[self.cam.acquire_period] = count_time + 0.005
 

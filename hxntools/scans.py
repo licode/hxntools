@@ -1,13 +1,15 @@
+import asyncio
+import functools
+import ophyd
 import logging
 
 from boltons.iterutils import chunked
-from bluesky import plans
+from bluesky import (plans, spec_api, Msg)
 from bluesky.global_state import get_gs
 from ophyd import (Device, Component as Cpt, EpicsSignal)
 from .detectors.trigger_mixins import HxnModalBase
 
 
-gs = get_gs()
 logger = logging.getLogger(__name__)
 
 
@@ -33,16 +35,23 @@ def get_next_scan_id():
     return dev_scan_id.get_next_scan_id()
 
 
-def scan_setup(detectors, total_points):
+@asyncio.coroutine
+def cmd_scan_setup(msg):
+    detectors = msg.kwargs['detectors']
+    total_points = msg.kwargs['total_points']
+
+    print('cmd_scan_setup', detectors, total_points)
+
     modal_dets = [det for det in detectors
                   if isinstance(det, HxnModalBase)]
 
+    mode = 'internal'
     for det in detectors:
+        print(det.name, 'will be internally triggered')
         logger.debug('Setting up detector %s', det)
         settings = det.mode_settings
 
         # start by using internal triggering
-        mode = 'internal'
         settings.mode.put(mode)
         settings.scan_type.put('step')
         settings.total_points.put(total_points)
@@ -59,62 +68,76 @@ def scan_setup(detectors, total_points):
     triggered_dets = set(sum(triggered_dets, []))
 
     mode = 'external'
-    for det in detectors:
+    for det in triggered_dets:
+        print(det.name, 'will be externally triggered')
         det.mode_settings.mode.put(mode)
         det.mode_setup(mode)
 
 
-class HxnScanMixin1D:
-    def _pre_scan(self):
-        # bluesky increments the scan id by one in open_run,
-        # so set it appropriately
-        gs.RE.md['scan_id'] = get_next_scan_id() - 1
-        if hasattr(self, '_pre_scan_calculate'):
-            yield from self._pre_scan_calculate()
-        yield from scan_setup(self.detectors, total_points=self.num)
-        yield from super()._pre_scan()
-
-
-class HxnAbsScan(HxnScanMixin1D, plans.AbsScanPlan):
-    pass
-
-
-class HxnDeltaScan(HxnScanMixin1D, plans.DeltaScanPlan):
-    pass
-
-
-class HxnInnerAbsScan(HxnScanMixin1D, plans.InnerProductAbsScanPlan):
-    pass
-
-
-class HxnInnerDeltaScan(HxnScanMixin1D, plans.InnerProductDeltaScanPlan):
-    pass
-
-
-class HxnScanMixinOuter:
-    def _pre_scan(self):
-        # bluesky increments the scan id by one in open_run,
-        # so set it appropriately
-        gs.RE.md['scan_id'] = get_next_scan_id() - 1
-
-        total_points = 1
-        for motor, start, stop, num, snake in chunked(self.args, 5):
-            total_points *= num
-
-        if hasattr(self, '_pre_scan_calculate'):
-            yield from self._pre_scan_calculate()
-
-        yield from scan_setup(self.detectors, total_points=total_points)
-        yield from super()._pre_scan()
-
-
-class HxnOuterAbsScan(HxnScanMixinOuter, plans.OuterProductAbsScanPlan):
-    pass
+@asyncio.coroutine
+def cmd_next_scan_id(msg):
+    print('cmd_next_scan_id')
+    gs = get_gs()
+    gs.RE.md['scan_id'] = get_next_scan_id() - 1
 
 
 def setup():
-    simple_scans.AbsScan.plan_class = HxnAbsScan
-    simple_scans.DeltaScan.plan_class = HxnDeltaScan
-    simple_scans.InnerProductAbsScan.plan_class = HxnInnerAbsScan
-    simple_scans.InnerProductDeltaScan.plan_class = HxnInnerDeltaScan
-    simple_scans.OuterProductAbsScan.plan_class = HxnOuterAbsScan
+    gs = get_gs()
+    gs.RE.register_command('hxn_scan_setup', cmd_scan_setup)
+    # gs.RE.register_command('hxn_next_scan_id', cmd_next_scan_id)
+    # TODO debugging
+    @asyncio.coroutine
+    def _debug_next_id(cmd):
+        pass
+
+    gs.RE.register_command('hxn_next_scan_id', _debug_next_id)
+
+    # TODO
+    ophyd.Signal.set = ophyd.Signal.put
+
+
+@functools.wraps(spec_api.ascan)
+def ascan(motor, start, finish, intervals, time=None, **kwargs):
+    # bluesky increments the scan id by one in open_run,
+    # so set it appropriately
+    gs = get_gs()
+    yield Msg('hxn_next_scan_id')
+    yield Msg('hxn_scan_setup', detectors=gs.DETS, total_points=intervals + 1)
+    yield from spec_api.ascan(motor, start, finish, intervals, time, **kwargs)
+
+
+# class HxnAbsScan(HxnScanMixin1D, plans.Scan):
+#     pass
+#
+#
+# class HxnDeltaScan(HxnScanMixin1D, plans.DeltaScanPlan):
+#     pass
+#
+#
+# class HxnInnerAbsScan(HxnScanMixin1D, plans.InnerProductAbsScanPlan):
+#     pass
+#
+#
+# class HxnInnerDeltaScan(HxnScanMixin1D, plans.InnerProductDeltaScanPlan):
+#     pass
+#
+#
+# class HxnScanMixinOuter:
+#     def _gen(self):
+#         # bluesky increments the scan id by one in open_run,
+#         # so set it appropriately
+#         gs.RE.md['scan_id'] = get_next_scan_id() - 1
+#
+#         total_points = 1
+#         for motor, start, stop, num, snake in chunked(self.args, 5):
+#             total_points *= num
+#
+#         if hasattr(self, '_pre_scan_calculate'):
+#             yield from self._pre_scan_calculate()
+#
+#         yield from scan_setup(self.detectors, total_points=total_points)
+#         yield from super()._gen()
+#
+#
+# class HxnOuterAbsScan(HxnScanMixinOuter, plans.OuterProductAbsScanPlan):
+#     pass

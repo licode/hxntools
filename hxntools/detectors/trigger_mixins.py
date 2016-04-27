@@ -29,8 +29,6 @@ class TriggerBase(BlueskyInterface):
 
 
 class HxnModalSettings(Device):
-    count_time = Cpt(Signal, value=1.0,
-                     doc='Exposure/count time, as specified by bluesky')
     mode = Cpt(Signal, value='internal',
                doc='Triggering mode (external/external)')
     scan_type = Cpt(Signal, value='?',
@@ -45,17 +43,8 @@ class HxnModalSettings(Device):
 
 class HxnModalBase(Device):
     mode_settings = Cpt(HxnModalSettings, '')
-
-    @property
-    def count_time(self):
-        return self.mode_settings.count_time.get()
-
-    @count_time.setter
-    def count_time(self, value):
-        if value is None:
-            return
-
-        self.mode_settings.count_time.put(value)
+    count_time = Cpt(Signal, value=1.0,
+                     doc='Exposure/count time, as specified by bluesky')
 
     def mode_setup(self, mode):
         devices = [self] + [getattr(self, attr) for attr in self._sub_devices]
@@ -146,8 +135,9 @@ class HxnModalTrigger(HxnModalBase, TriggerBase):
 
     def trigger(self):
         mode = self.mode_settings.mode.get()
-        mode_setup_method = getattr(self, 'trigger_{}'.format(mode))
-        return mode_setup_method()
+        mode_trigger = getattr(self, 'trigger_{}'.format(mode))
+        print('mode trigger', self.name, mode_trigger)
+        return mode_trigger()
 
     def _acquire_changed(self, value=None, old_value=None, **kwargs):
         '''This is called when the 'acquire' signal changes.'''

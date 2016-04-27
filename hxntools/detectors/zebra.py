@@ -272,8 +272,9 @@ class HxnZebra(Zebra):
         super().mode_internal()
 
         scan_type = self.mode_settings.scan_type.get()
-        raise ValueError('Unknown scan type for internal triggering: '
-                         '{}'.format(scan_type))
+        # no concept of internal triggering for now
+        # raise ValueError('Unknown scan type for internal triggering: '
+        #                  '{}'.format(scan_type))
 
     def mode_external(self):
         super().mode_external()
@@ -288,15 +289,15 @@ class HxnZebra(Zebra):
             # self.output[1].ttl = self.GATE1
             # merlin:
             # (Merlin is now on TTL 1 output, replacing timepix 1)
-            self.output[1].ttl.put(ZebraAddresses.GATE2)
-            self.output[2].ttl.put(ZebraAddresses.GATE1)
+            self.output[1].ttl.addr.put(ZebraAddresses.GATE2)
+            self.output[2].ttl.addr.put(ZebraAddresses.GATE1)
 
             self.gate[2].input1.addr.put(ZebraAddresses.IN3_OC)
             self.gate[2].input2.addr.put(ZebraAddresses.IN3_OC)
             self.gate[2].set_input_edges(0, 1)
 
-            self.output[3].ttl.put(ZebraAddresses.GATE2)
-            self.output[4].ttl.put(ZebraAddresses.GATE2)
+            self.output[3].ttl.addr.put(ZebraAddresses.GATE2)
+            self.output[4].ttl.addr.put(ZebraAddresses.GATE2)
 
             # Merlin LVDS
             # self.output[1].lvds.put(ZebraAddresses.GATE2)
@@ -313,9 +314,10 @@ class HxnZebra(Zebra):
             # OUT4_TTL Xspress3
             self.pulse[1].input_addr.put(ZebraAddresses.IN1_TTL)
 
-            if self.count_time is not None:
-                logger.debug('Step scan pulse-width is %s', self.count_time)
-                self.pulse[1].width.put(ZebraAddresses.count_time)
+            count_time = self.count_time.get()
+            if count_time is not None:
+                logger.debug('Step scan pulse-width is %s', count_time)
+                self.pulse[1].width.put(count_time)
                 self.pulse[1].time_units.put('s')
 
             self.pulse[1].delay.put(0.0)
@@ -323,23 +325,23 @@ class HxnZebra(Zebra):
 
             # To be used in regular scaler mode, scaler 1 has to have
             # inhibit cleared and counting enabled:
-            self.soft_input4.addr.put(1)
+            self.soft_input4.put(1)
 
             # Timepix
             # self.output[1].ttl = self.PULSE1
             # Merlin
-            self.output[1].ttl.put(ZebraAddresses.PULSE1)
-            self.output[2].ttl.put(ZebraAddresses.SOFT_IN4)
+            self.output[1].ttl.addr.put(ZebraAddresses.PULSE1)
+            self.output[2].ttl.addr.put(ZebraAddresses.SOFT_IN4)
 
             self.gate[2].input1.addr.put(ZebraAddresses.PULSE1)
             self.gate[2].input2.addr.put(ZebraAddresses.PULSE1)
             self.gate[2].set_input_edges(0, 1)
 
-            self.output[3].ttl.put(ZebraAddresses.SOFT_IN4)
-            self.output[4].ttl.put(ZebraAddresses.GATE2)
+            self.output[3].ttl.addr.put(ZebraAddresses.SOFT_IN4)
+            self.output[4].ttl.addr.put(ZebraAddresses.GATE2)
 
             # Merlin LVDS
-            self.output[1].lvds.put(ZebraAddresses.PULSE1)
+            self.output[1].lvds.addr.put(ZebraAddresses.PULSE1)
         else:
             raise ValueError('Unknown scan type for external triggering: '
                              '{}'.format(scan_type))
