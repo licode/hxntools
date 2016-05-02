@@ -77,6 +77,7 @@ class HxnModalTrigger(HxnModalBase, TriggerBase):
         if image_name is None:
             image_name = '_'.join([self.name, 'image'])
         self._image_name = image_name
+        self._external_acquire_at_stage = True
 
     def mode_internal(self):
         super().mode_internal()
@@ -111,6 +112,11 @@ class HxnModalTrigger(HxnModalBase, TriggerBase):
         self._acquisition_signal.subscribe(self._acquire_changed)
         super().stage()
 
+        # In external triggering mode, the devices is only triggered once at stage
+        mode = self.mode_settings.mode.get()
+        if mode == 'external' and self._external_acquire_at_stage:
+            self._acquisition_signal.put(1, wait=False)
+
     def unstage(self):
         try:
             super().unstage()
@@ -133,8 +139,9 @@ class HxnModalTrigger(HxnModalBase, TriggerBase):
                                "Call the stage() method before triggering.")
 
         self._status = DeviceStatus(self)
-        self._acquisition_signal.put(1, wait=False)
-        # self.dispatch(self._image_name, ttime.time())
+        self._status._finished()
+        # TODO this timestamp is inaccurate!
+        self.dispatch(self._image_name, ttime.time())
         return self._status
 
     def trigger(self):
