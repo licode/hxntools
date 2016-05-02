@@ -91,6 +91,8 @@ class HxnMerlinDetector(HxnModalTrigger, MerlinDetector):
                 write_path_template='/data/%Y/%m/%d/')
 
     def mode_internal(self):
+        super().mode_internal()
+
         logger.info('%s internal triggering (%s)', self.name,
                     self.mode_settings)
         count_time = self.count_time.get()
@@ -98,6 +100,8 @@ class HxnMerlinDetector(HxnModalTrigger, MerlinDetector):
         self.stage_sigs[self.cam.acquire_period] = count_time + 0.005
 
     def mode_external(self):
+        super().mode_external()
+
         logger.info('%s external triggering (%s)', self.name,
                     self.mode_settings)
 

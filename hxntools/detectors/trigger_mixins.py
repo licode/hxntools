@@ -79,6 +79,8 @@ class HxnModalTrigger(HxnModalBase, TriggerBase):
         self._image_name = image_name
 
     def mode_internal(self):
+        super().mode_internal()
+
         scan_type = self.mode_settings.scan_type.get()
         total_points = self.mode_settings.total_points.get()
         logger.info('%s internal triggering (scan_type=%s; total_points=%d)',
@@ -93,6 +95,8 @@ class HxnModalTrigger(HxnModalBase, TriggerBase):
         cam.stage_sigs[cam.trigger_mode] = 'Internal'
 
     def mode_external(self):
+        super().mode_external()
+
         scan_type = self.mode_settings.scan_type.get()
         total_points = self.mode_settings.total_points.get()
         logger.info('%s external triggering (scan_type=%s; total_points=%d)',
