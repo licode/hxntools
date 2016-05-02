@@ -1,14 +1,19 @@
 from enum import IntEnum
 import logging
 
-from ophyd import (Device, Component as Cpt,
-                   FormattedComponent as FC)
+from ophyd import (Device, Component as Cpt, FormattedComponent as FC,
+                   Signal)
 from ophyd import (EpicsSignal, EpicsSignalRO, DeviceStatus)
 from ophyd.utils import set_and_wait
 
 from .trigger_mixins import HxnModalBase
 
 logger = logging.getLogger(__name__)
+
+
+def _get_configuration_attrs(cls, *, signal_class=Signal):
+    return [sig_name for sig_name in cls.signal_names
+            if issubclass(getattr(cls, sig_name).cls, signal_class)]
 
 
 class ZebraAddresses(IntEnum):
@@ -105,13 +110,20 @@ class ZebraPulse(Device):
                    4: 'BF',
                    }
 
-    def __init__(self, prefix, *, index=None, parent=None, **kwargs):
-        zebra = parent
+    def __init__(self, prefix, *, index=None, parent=None,
+                 configuration_attrs=None, read_attrs=None, **kwargs):
+        if read_attrs is None:
+            read_attrs = []
+        if configuration_attrs is None:
+            configuration_attrs = _get_configuration_attrs(self.__class__)
 
+        zebra = parent
         self.index = index
         self._zebra_prefix = zebra.prefix
         self._edge_addr = self._edge_addrs[index]
-        super().__init__(prefix, **kwargs)
+
+        super().__init__(prefix, configuration_attrs=configuration_attrs,
+                         read_attrs=read_attrs, parent=parent, **kwargs)
 
 
 class ZebraOutputBase(Device):
@@ -132,9 +144,17 @@ class ZebraOutputBase(Device):
         8                            o
 
     '''
-    def __init__(self, prefix, *, index=None, **kwargs):
+    def __init__(self, prefix, *, index=None, read_attrs=None,
+                 configuration_attrs=None, **kwargs):
         self.index = index
-        super().__init__(prefix, **kwargs)
+
+        if read_attrs is None:
+            read_attrs = []
+        if configuration_attrs is None:
+            configuration_attrs = _get_configuration_attrs(self.__class__)
+
+        super().__init__(prefix, read_attrs=read_attrs,
+                         configuration_attrs=configuration_attrs, **kwargs)
 
 
 class ZebraOutputType(Device):
@@ -144,6 +164,16 @@ class ZebraOutputType(Device):
     string = Cpt(EpicsSignalRO, ':STR', string=True)
     sync = Cpt(EpicsSignal, ':SYNC')
     write_output = Cpt(EpicsSignal, ':SET')
+
+    def __init__(self, prefix, *, read_attrs=None, configuration_attrs=None,
+                 **kwargs):
+        if read_attrs is None:
+            read_attrs = []
+        if configuration_attrs is None:
+            configuration_attrs = _get_configuration_attrs(self.__class__)
+
+        super().__init__(prefix, read_attrs=read_attrs,
+                         configuration_attrs=configuration_attrs, **kwargs)
 
 
 class ZebraFrontOutput12(ZebraOutputBase):
@@ -182,7 +212,13 @@ class ZebraGateInput(Device):
     edge = FC(EpicsSignal,
               '{self._zebra_prefix}POLARITY:B{self._input_edge_idx}')
 
-    def __init__(self, prefix, *, index=None, parent=None, **kwargs):
+    def __init__(self, prefix, *, index=None, parent=None,
+                 configuration_attrs=None, read_attrs=None, **kwargs):
+        if read_attrs is None:
+            read_attrs = []
+        if configuration_attrs is None:
+            configuration_attrs = _get_configuration_attrs(self.__class__)
+
         gate = parent
         zebra = gate.parent
 
@@ -190,7 +226,9 @@ class ZebraGateInput(Device):
         self._zebra_prefix = zebra.prefix
         self._input_edge_idx = gate._input_edge_idx[self.index]
 
-        super().__init__(prefix, parent=parent, **kwargs)
+        super().__init__(prefix, read_attrs=read_attrs,
+                         configuration_attrs=configuration_attrs,
+                         parent=parent, **kwargs)
 
 
 class ZebraGate(Device):
@@ -198,13 +236,20 @@ class ZebraGate(Device):
     input2 = Cpt(ZebraGateInput, 'INP2', index=2)
     output = Cpt(EpicsSignal, 'OUT')
 
-    def __init__(self, prefix, *, index, **kwargs):
+    def __init__(self, prefix, *, index=None, read_attrs=None,
+                 configuration_attrs=None, **kwargs):
         self.index = index
         self._input_edge_idx = {1: index - 1,
                                 2: 4 + index - 1
                                 }
 
-        super().__init__(prefix, **kwargs)
+        if read_attrs is None:
+            read_attrs = []
+        if configuration_attrs is None:
+            configuration_attrs = ['output']
+
+        super().__init__(prefix, configuration_attrs=configuration_attrs,
+                         read_attrs=read_attrs, **kwargs)
 
     def set_input_edges(self, edge1, edge2):
         set_and_wait(self.input1.edge, int(edge1))
@@ -239,8 +284,15 @@ class Zebra(HxnModalBase, Device):
 
     addresses = ZebraAddresses
 
-    def __init__(self, prefix, **kwargs):
-        super().__init__(prefix, **kwargs)
+    def __init__(self, prefix, *, configuration_attrs=None, read_attrs=None,
+                 **kwargs):
+        if read_attrs is None:
+            read_attrs = []
+        if configuration_attrs is None:
+            configuration_attrs = _get_configuration_attrs(self.__class__)
+
+        super().__init__(prefix, configuration_attrs=configuration_attrs,
+                         read_attrs=read_attrs, **kwargs)
 
         self.pulse = dict(self._get_indexed_devices(ZebraPulse))
         self.output = dict(self._get_indexed_devices(ZebraOutputBase))
