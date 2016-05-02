@@ -90,8 +90,6 @@ class TimepixDetector(HxnModalTrigger, AreaDetector):
         self.cam.stage_sigs[self.cam.acquire_time] = count_time
         self.cam.stage_sigs[self.cam.acquire_period] = count_time + 0.005
 
-        self.stage_sigs.move_to_end(self.cam.acquire)
-
     def mode_external(self):
         raise RuntimeError('Timepix external triggering not supported '
                            'reliably')
