@@ -98,22 +98,19 @@ def setup():
 
 @functools.wraps(spec_api.ascan)
 def ascan(motor, start, finish, intervals, time=None, **kwargs):
-    # bluesky increments the scan id by one in open_run,
-    # so set it appropriately
     gs = get_gs()
     yield Msg('hxn_next_scan_id')
     yield Msg('hxn_scan_setup', detectors=gs.DETS, total_points=intervals + 1)
     yield from spec_api.ascan(motor, start, finish, intervals, time, **kwargs)
 
 
-# class HxnAbsScan(HxnScanMixin1D, plans.Scan):
-#     pass
-#
-#
-# class HxnDeltaScan(HxnScanMixin1D, plans.DeltaScanPlan):
-#     pass
-#
-#
+@functools.wraps(spec_api.dscan)
+def dscan(motor, start, finish, intervals, time=None, **kwargs):
+    gs = get_gs()
+    yield Msg('hxn_next_scan_id')
+    yield Msg('hxn_scan_setup', detectors=gs.DETS, total_points=intervals + 1)
+    yield from spec_api.dscan(motor, start, finish, intervals, time, **kwargs)
+
 # class HxnInnerAbsScan(HxnScanMixin1D, plans.InnerProductAbsScanPlan):
 #     pass
 #
