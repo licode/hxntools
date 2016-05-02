@@ -85,10 +85,10 @@ class HxnMerlinDetector(HxnModalTrigger, MerlinDetector):
                configuration_attrs=[],
                write_path_template='/data/%Y/%m/%d/')
 
-    tiff1 = Cpt(MerlinTiffPlugin, 'TIFF1:',
-                read_attrs=[],
-                configuration_attrs=[],
-                write_path_template='/data/%Y/%m/%d/')
+    # tiff1 = Cpt(MerlinTiffPlugin, 'TIFF1:',
+    #             read_attrs=[],
+    #             configuration_attrs=[],
+    #             write_path_template='/data/%Y/%m/%d/')
 
     def mode_internal(self):
         super().mode_internal()
