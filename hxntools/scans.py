@@ -40,15 +40,12 @@ def cmd_scan_setup(msg):
     detectors = msg.kwargs['detectors']
     total_points = msg.kwargs['total_points']
 
-    print('cmd_scan_setup', detectors, total_points)
-
     modal_dets = [det for det in detectors
                   if isinstance(det, HxnModalBase)]
 
     mode = 'internal'
     for det in detectors:
-        print(det.name, 'will be internally triggered')
-        logger.debug('Setting up detector %s', det)
+        logger.debug('[internal trigger] Setting up detector %s', det.name)
         settings = det.mode_settings
 
         # start by using internal triggering
@@ -67,9 +64,12 @@ def cmd_scan_setup(msg):
                       if triggers is not None]
     triggered_dets = set(sum(triggered_dets, []))
 
+    logger.debug('These detectors will be externally triggered: %s',
+                 ', '.join(det.name for det in triggered_dets))
+
     mode = 'external'
     for det in triggered_dets:
-        print(det.name, 'will be externally triggered')
+        logger.debug('[external trigger] Setting up detector %s', det)
         det.mode_settings.mode.put(mode)
         det.mode_setup(mode)
 
@@ -88,7 +88,9 @@ def setup():
     # TODO debugging
     @asyncio.coroutine
     def _debug_next_id(cmd):
-        pass
+        print('debug_next_scan_id')
+        gs = get_gs()
+        gs.RE.md['scan_id'] = 0
 
     gs.RE.register_command('hxn_next_scan_id', _debug_next_id)
 
