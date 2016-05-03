@@ -95,9 +95,6 @@ def setup():
     # gs.RE.register_command('hxn_next_scan_id', cmd_next_scan_id)
     gs.RE.register_command('hxn_next_scan_id', _debug_next_scan_id)
 
-    # TODO
-    ophyd.Signal.set = ophyd.Signal.put
-
 
 @functools.wraps(spec_api.ascan)
 def ascan(motor, start, finish, intervals, time=None, **kwargs):
