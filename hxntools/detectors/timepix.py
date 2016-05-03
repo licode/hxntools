@@ -155,7 +155,10 @@ class HxnTimepixDetector(TimepixDetector):
     #             configuration_attrs=[],
     #             write_path_template='/data/%Y/%m/%d/')
 
-    def __init__(self, prefix, configuration_attrs=None, **kwargs):
+    def __init__(self, prefix, *, read_attrs=None, configuration_attrs=None,
+                 **kwargs):
+        if read_attrs is None:
+            read_attrs = ['cam', 'hdf5']
         if configuration_attrs is None:
             configuration_attrs = ['cam', 'hdf5']
         super().__init__(prefix, configuration_attrs=configuration_attrs,

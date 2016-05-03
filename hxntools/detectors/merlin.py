@@ -36,7 +36,11 @@ class MerlinDetectorCam(CamBase):
 
 
 class MerlinDetector(AreaDetector):
-    cam = Cpt(MerlinDetectorCam, 'cam1:')
+    cam = Cpt(MerlinDetectorCam, 'cam1:',
+              read_attrs=[],
+              configuration_attrs=['image_mode', 'trigger_mode',
+                                   'acquire_time', 'acquire_period'],
+              )
 
     def __init__(self, prefix, **kwargs):
         super().__init__(prefix, **kwargs)
