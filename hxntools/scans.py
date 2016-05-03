@@ -76,23 +76,24 @@ def cmd_scan_setup(msg):
 
 @asyncio.coroutine
 def cmd_next_scan_id(msg):
-    print('cmd_next_scan_id')
     gs = get_gs()
     gs.RE.md['scan_id'] = get_next_scan_id() - 1
+
+
+@asyncio.coroutine
+def _debug_next_scan_id(cmd):
+    print('debug_next_scan_id')
+    gs = get_gs()
+    gs.RE.md['scan_id'] = 0
 
 
 def setup():
     gs = get_gs()
     gs.RE.register_command('hxn_scan_setup', cmd_scan_setup)
-    # gs.RE.register_command('hxn_next_scan_id', cmd_next_scan_id)
-    # TODO debugging
-    @asyncio.coroutine
-    def _debug_next_id(cmd):
-        print('debug_next_scan_id')
-        gs = get_gs()
-        gs.RE.md['scan_id'] = 0
 
-    gs.RE.register_command('hxn_next_scan_id', _debug_next_id)
+    # TODO debugging
+    # gs.RE.register_command('hxn_next_scan_id', cmd_next_scan_id)
+    gs.RE.register_command('hxn_next_scan_id', _debug_next_scan_id)
 
     # TODO
     ophyd.Signal.set = ophyd.Signal.put

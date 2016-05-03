@@ -97,17 +97,12 @@ class HxnMerlinDetector(HxnModalTrigger, MerlinDetector):
     def mode_internal(self):
         super().mode_internal()
 
-        logger.info('%s internal triggering (%s)', self.name,
-                    self.mode_settings)
         count_time = self.count_time.get()
         self.stage_sigs[self.cam.acquire_time] = count_time
         self.stage_sigs[self.cam.acquire_period] = count_time + 0.005
 
     def mode_external(self):
         super().mode_external()
-
-        logger.info('%s external triggering (%s)', self.name,
-                    self.mode_settings)
 
         # NOTE: these values specify a debounce time for external triggering so
         #       they should be set to < 0.5 the expected exposure time

@@ -1,8 +1,5 @@
-import os
 import time as ttime
 import logging
-# import itertools
-import uuid
 
 from ophyd.device import (DeviceStatus, BlueskyInterface, Staged,
                           Component as Cpt, Device)
@@ -82,11 +79,6 @@ class HxnModalTrigger(HxnModalBase, TriggerBase):
     def mode_internal(self):
         super().mode_internal()
 
-        scan_type = self.mode_settings.scan_type.get()
-        total_points = self.mode_settings.total_points.get()
-        logger.info('%s internal triggering (scan_type=%s; total_points=%d)',
-                    self.name, scan_type, total_points)
-
         cam = self.cam
         cam.stage_sigs[cam.acquire] = 0
         ordered_dict_move_to_beginning(cam.stage_sigs, cam.acquire)
@@ -97,11 +89,7 @@ class HxnModalTrigger(HxnModalBase, TriggerBase):
 
     def mode_external(self):
         super().mode_external()
-
-        scan_type = self.mode_settings.scan_type.get()
         total_points = self.mode_settings.total_points.get()
-        logger.info('%s external triggering (scan_type=%s; total_points=%d)',
-                    self.name, scan_type, total_points)
 
         cam = self.cam
         cam.stage_sigs[cam.num_images] = total_points
@@ -112,7 +100,8 @@ class HxnModalTrigger(HxnModalBase, TriggerBase):
         self._acquisition_signal.subscribe(self._acquire_changed)
         super().stage()
 
-        # In external triggering mode, the devices is only triggered once at stage
+        # In external triggering mode, the devices is only triggered once at
+        # stage
         mode = self.mode_settings.mode.get()
         if mode == 'external' and self._external_acquire_at_stage:
             self._acquisition_signal.put(1, wait=False)
@@ -147,7 +136,6 @@ class HxnModalTrigger(HxnModalBase, TriggerBase):
     def trigger(self):
         mode = self.mode_settings.mode.get()
         mode_trigger = getattr(self, 'trigger_{}'.format(mode))
-        print('mode trigger', self.name, mode_trigger)
         return mode_trigger()
 
     def _acquire_changed(self, value=None, old_value=None, **kwargs):

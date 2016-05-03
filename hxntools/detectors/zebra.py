@@ -305,12 +305,12 @@ class Zebra(HxnModalBase, Device):
                 yield dev.index, dev
 
     def mode_internal(self):
-        logger.debug('Zebra %s: configuring internal triggering mode (%s)',
-                     self, self.mode_settings.get())
+        super().mode_internal()
+        # handle the scan type here
 
     def mode_external(self):
-        logger.debug('Zebra %s: configuring external triggering mode (%s)',
-                     self, self.mode_settings.get())
+        super().mode_external()
+        # handle the scan type here
 
     def trigger(self):
         # Re-implement this to trigger as desired in bluesky
