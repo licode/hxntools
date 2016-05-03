@@ -297,30 +297,25 @@ def relative_spiral(x_motor, y_motor, x_range, y_range, dr, factor, time=None,
     return [plan]
 
 
-# class HxnInnerAbsScan(HxnScanMixin1D, plans.InnerProductAbsScanPlan):
-#     pass
-#
-#
-# class HxnInnerDeltaScan(HxnScanMixin1D, plans.InnerProductDeltaScanPlan):
-#     pass
-#
-#
-# class HxnScanMixinOuter:
-#     def _gen(self):
-#         # bluesky increments the scan id by one in open_run,
-#         # so set it appropriately
-#         gs.RE.md['scan_id'] = get_next_scan_id() - 1
-#
-#         total_points = 1
-#         for motor, start, stop, num, snake in chunked(self.args, 5):
-#             total_points *= num
-#
-#         if hasattr(self, '_pre_scan_calculate'):
-#             yield from self._pre_scan_calculate()
-#
-#         yield from scan_setup(self.detectors, total_points=total_points)
-#         yield from super()._gen()
-#
-#
-# class HxnOuterAbsScan(HxnScanMixinOuter, plans.OuterProductAbsScanPlan):
-#     pass
+@functools.wraps(spec_api.mesh)
+def absolute_mesh(*args, time=None, md=None):
+    if (len(args) % 4) == 1:
+        if time is not None:
+            raise ValueError('wrong number of positional arguments')
+        args, time = args[:-1], args[-1]
+
+    total_points = 1
+    for motor, start, stop, num in chunked(args, 4):
+        total_points *= num
+    yield from _pre_scan(total_points=total_points)
+    yield from spec_api.mesh(*args, time=time, md=md)
+
+
+@functools.wraps(absolute_mesh)
+def relative_mesh(*args, time=None, md=None):
+    plan = absolute_mesh(*args, time=time, md=md)
+    plan = plans.relative_set(plan)  # re-write trajectory as relative
+    yield from plans.reset_positions(plan)
+
+
+# TODO: exposure time recording!
