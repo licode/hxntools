@@ -161,7 +161,13 @@ class HxnTimepixDetector(TimepixDetector):
             read_attrs = ['cam', 'hdf5']
         if configuration_attrs is None:
             configuration_attrs = ['cam', 'hdf5']
+
+        if 'hdf5' not in read_attrs:
+            # ensure that hdf5 is still added, or data acquisition will fail
+            read_attrs = list(read_attrs) + ['hdf5']
+
         super().__init__(prefix, configuration_attrs=configuration_attrs,
+                         read_attrs=read_attrs,
                          **kwargs)
 
         # signal aliases?

@@ -42,9 +42,6 @@ class MerlinDetector(AreaDetector):
                                    'acquire_time', 'acquire_period'],
               )
 
-    def __init__(self, prefix, **kwargs):
-        super().__init__(prefix, **kwargs)
-
 
 class MerlinFileStoreHDF5(FileStorePluginBase, FileStoreIterativeWrite):
     _spec = 'TPX_HDF5'
@@ -93,6 +90,20 @@ class HxnMerlinDetector(HxnModalTrigger, MerlinDetector):
     #             read_attrs=[],
     #             configuration_attrs=[],
     #             write_path_template='/data/%Y/%m/%d/')
+
+    def __init__(self, prefix, *, read_attrs=None, configuration_attrs=None,
+                 **kwargs):
+        if read_attrs is None:
+            read_attrs = ['hdf5', 'cam']
+        if configuration_attrs is None:
+            configuration_attrs = ['hdf5', 'cam']
+
+        if 'hdf5' not in read_attrs:
+            # ensure that hdf5 is still added, or data acquisition will fail
+            read_attrs = list(read_attrs) + ['hdf5']
+
+        super().__init__(prefix, configuration_attrs=configuration_attrs,
+                         read_attrs=read_attrs, **kwargs)
 
     def mode_internal(self):
         super().mode_internal()
