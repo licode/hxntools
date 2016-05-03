@@ -204,6 +204,99 @@ def relative_fermat(x_motor, y_motor, x_range, y_range, dr, factor, time=None,
     return [plan]
 
 
+@plans.planify
+def absolute_spiral(x_motor, y_motor, x_range, y_range, dr, nth, time=None,
+                    *, per_step=None, md=None):
+    '''Simple spiral scan, centered around (0, 0)
+
+    'Simple' in this context means that the spiral is drawn as one would
+    expect: in a continuous trajectory from the innermost point outward. It is
+    also simple in comparison to the trajectory in a fermat spiral.
+
+    Parameters
+    ----------
+    x_motor : object
+        any 'setable' object (motor, temp controller, etc.)
+    y_motor : object
+        any 'setable' object (motor, temp controller, etc.)
+    x_range : float
+        X range, in engineering units
+    y_range : float
+        Y range, in engineering units
+    dr : float
+        Delta radius, in engineering units
+    nth : float
+        Number of theta steps
+    time : float, optional
+        applied to any detectors that have a `count_time` setting
+    per_step : callable, optional
+        hook for cutomizing action of inner loop (messages per step)
+        See docstring of bluesky.plans.one_nd_step (the default) for
+        details.
+    md : dict, optional
+        metadata
+    '''
+    px, py = scan_patterns.spiral_simple(x_range, y_range, dr, nth)
+
+    cyc = cycler(x_motor, px)
+    cyc += cycler(y_motor, py)
+
+    total_points = len(cyc)
+
+    plan_stack = deque()
+    plan_stack.append(_pre_scan(total_points=total_points))
+
+    gs = get_gs()
+    subs = {'all': [LiveTable([x_motor, y_motor, gs.PLOT_Y] + gs.TABLE_COLS),
+                    spec_api.setup_plot([x_motor]),
+                    ]}
+
+    with plans.subs_context(plan_stack, subs):
+        plan = plans.scan_nd(gs.DETS, cyc, per_step=per_step, md=md)
+        plan = plans.configure_count_time(plan, time)
+        plan_stack.append(plan)
+    return plan_stack
+
+
+@plans.planify
+def relative_spiral(x_motor, y_motor, x_range, y_range, dr, factor, time=None,
+                    *, per_step=None, md=None):
+    '''Relative, simple spiral scan
+
+    'Simple' in this context means that the spiral is drawn as one would
+    expect: in a continuous trajectory from the innermost point outward. It is
+    also simple in comparison to the trajectory in a fermat spiral.
+
+    Parameters
+    ----------
+    x_motor : object
+        any 'setable' object (motor, temp controller, etc.)
+    y_motor : object
+        any 'setable' object (motor, temp controller, etc.)
+    x_range : float
+        X range, in engineering units
+    y_range : float
+        Y range, in engineering units
+    dr : float
+        Delta radius, in engineering units
+    nth : float
+        Number of theta steps
+    time : float, optional
+        applied to any detectors that have a `count_time` setting
+    per_step : callable, optional
+        hook for cutomizing action of inner loop (messages per step)
+        See docstring of bluesky.plans.one_nd_step (the default) for
+        details.
+    md : dict, optional
+        metadata
+    '''
+    plan = absolute_spiral(x_motor, y_motor, x_range, y_range, dr, factor,
+                           time=time, per_step=per_step, md=md)
+    plan = plans.relative_set(plan)  # re-write trajectory as relative
+    plan = plans.reset_positions(plan)  # return motors to starting pos
+    return [plan]
+
+
 # class HxnInnerAbsScan(HxnScanMixin1D, plans.InnerProductAbsScanPlan):
 #     pass
 #
