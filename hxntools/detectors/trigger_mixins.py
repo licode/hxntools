@@ -64,7 +64,9 @@ class HxnModalBase(Device):
         return self.mode_settings.mode.get()
 
     def stage(self):
-        self.mode_setup(self.mode)
+        if self._staged != Staged.yes:
+            self.mode_setup(self.mode)
+
         super().stage()
 
 
