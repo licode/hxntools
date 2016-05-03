@@ -2,13 +2,18 @@ import asyncio
 import functools
 import ophyd
 import logging
+from collections import deque
 
 from boltons.iterutils import chunked
+from cycler import cycler
+
 from bluesky import (plans, spec_api, Msg)
 from bluesky.global_state import get_gs
+from bluesky.callbacks import LiveTable, LivePlot, LiveRaster
+
 from ophyd import (Device, Component as Cpt, EpicsSignal)
 from .detectors.trigger_mixins import HxnModalBase
-
+from . import scan_patterns
 
 logger = logging.getLogger(__name__)
 
@@ -96,20 +101,108 @@ def setup():
     gs.RE.register_command('hxn_next_scan_id', _debug_next_scan_id)
 
 
-@functools.wraps(spec_api.ascan)
-def ascan(motor, start, finish, intervals, time=None, **kwargs):
+def _pre_scan(total_points):
     gs = get_gs()
     yield Msg('hxn_next_scan_id')
-    yield Msg('hxn_scan_setup', detectors=gs.DETS, total_points=intervals + 1)
+    yield Msg('hxn_scan_setup', detectors=gs.DETS, total_points=total_points)
+
+
+@functools.wraps(spec_api.ascan)
+def absolute_scan(motor, start, finish, intervals, time=None, **kwargs):
+    yield from _pre_scan(total_points=intervals + 1)
     yield from spec_api.ascan(motor, start, finish, intervals, time, **kwargs)
 
 
 @functools.wraps(spec_api.dscan)
-def dscan(motor, start, finish, intervals, time=None, **kwargs):
-    gs = get_gs()
-    yield Msg('hxn_next_scan_id')
-    yield Msg('hxn_scan_setup', detectors=gs.DETS, total_points=intervals + 1)
+def relative_scan(motor, start, finish, intervals, time=None, **kwargs):
+    yield from _pre_scan(total_points=intervals + 1)
     yield from spec_api.dscan(motor, start, finish, intervals, time, **kwargs)
+
+
+@plans.planify
+def absolute_fermat(x_motor, y_motor, x_range, y_range, dr, factor, time=None,
+                    *, per_step=None, md=None):
+    '''Absolute fermat spiral scan, centered around (0, 0)
+
+    Parameters
+    ----------
+    x_motor : object
+        any 'setable' object (motor, temp controller, etc.)
+    y_motor : object
+        any 'setable' object (motor, temp controller, etc.)
+    x_range : float
+        x range of spiral
+    y_range : float
+        y range of spiral
+    dr : float
+        delta radius
+    factor : float, optional
+        radius gets divided by this
+    time : float, optional
+        applied to any detectors that have a `count_time` setting
+    per_step : callable, optional
+        hook for cutomizing action of inner loop (messages per step)
+        See docstring of bluesky.plans.one_nd_step (the default) for
+        details.
+    md : dict, optional
+        metadata
+    '''
+    px, py = scan_patterns.spiral_fermat(x_range, y_range, dr, factor)
+
+    cyc = cycler(x_motor, px)
+    cyc += cycler(y_motor, py)
+
+    total_points = len(cyc)
+
+    plan_stack = deque()
+    plan_stack.append(_pre_scan(total_points=total_points))
+
+    gs = get_gs()
+    subs = {'all': [LiveTable([x_motor, y_motor, gs.PLOT_Y] + gs.TABLE_COLS),
+                    spec_api.setup_plot([x_motor]),
+                    ]}
+
+    with plans.subs_context(plan_stack, subs):
+        plan = plans.scan_nd(gs.DETS, cyc, per_step=per_step, md=md)
+        plan = plans.configure_count_time(plan, time)
+        plan_stack.append(plan)
+    return plan_stack
+
+
+@plans.planify
+def relative_fermat(x_motor, y_motor, x_range, y_range, dr, factor, time=None,
+                    *, per_step=None, md=None):
+    '''Relative fermat spiral scan
+
+    Parameters
+    ----------
+    x_motor : object
+        any 'setable' object (motor, temp controller, etc.)
+    y_motor : object
+        any 'setable' object (motor, temp controller, etc.)
+    x_range : float
+        x range of spiral
+    y_range : float
+        y range of spiral
+    dr : float
+        delta radius
+    factor : float, optional
+        radius gets divided by this
+    time : float, optional
+        applied to any detectors that have a `count_time` setting
+    per_step : callable, optional
+        hook for cutomizing action of inner loop (messages per step)
+        See docstring of bluesky.plans.one_nd_step (the default) for
+        details.
+    md : dict, optional
+        metadata
+    '''
+    plan = absolute_fermat(x_motor, y_motor, x_range, y_range, dr, factor,
+                           time=time, per_step=per_step, md=md)
+    plan = plans.relative_set(plan)  # re-write trajectory as relative
+    plan = plans.reset_positions(plan)  # return motors to starting pos
+    return [plan]
+
 
 # class HxnInnerAbsScan(HxnScanMixin1D, plans.InnerProductAbsScanPlan):
 #     pass
