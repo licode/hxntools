@@ -17,13 +17,13 @@ from ophyd.areadetector import (DetectorBase, CamBase,
                                 EpicsSignalWithRBV as SignalWithRBV)
 from ophyd import (Signal, EpicsSignal, EpicsSignalRO, DerivedSignal)
 
-from ophyd import (Device, Component as C, FormattedComponent as FC,
+from ophyd import (Device, Component as Cpt, FormattedComponent as FC,
                    DynamicDeviceComponent as DDC)
 from ophyd.areadetector.plugins import PluginBase
 from ophyd.areadetector.filestore_mixins import FileStorePluginBase
 
 from ophyd.areadetector.plugins import HDF5Plugin
-from ophyd.device import BlueskyInterface, Staged, Component as Cpt
+from ophyd.device import (BlueskyInterface, Staged)
 from ophyd.ophydobj import DeviceStatus
 
 from ..handlers import Xspress3HDF5Handler
@@ -64,8 +64,8 @@ class EvSignal(DerivedSignal):
 
 class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
     '''Xspress3 acquisition -> filestore'''
-    num_capture_calc = C(EpicsSignal, 'NumCapture_CALC')
-    num_capture_calc_disable = C(EpicsSignal, 'NumCapture_CALC.DISA')
+    num_capture_calc = Cpt(EpicsSignal, 'NumCapture_CALC')
+    num_capture_calc_disable = Cpt(EpicsSignal, 'NumCapture_CALC.DISA')
 
     def __init__(self, basename, *, config_time=0.5,
                  mds_key_format='{self.settings.name}_ch{chan}', parent=None,
@@ -286,36 +286,36 @@ class Xspress3DetectorSettings(CamBase):
         super().__init__(prefix, read_attrs=read_attrs,
                          configuration_attrs=configuration_attrs, **kwargs)
 
-    config_path = C(SignalWithRBV, 'CONFIG_PATH', string=True)
-    config_save_path = C(SignalWithRBV, 'CONFIG_SAVE_PATH', string=True)
-    connect = C(EpicsSignal, 'CONNECT')
-    connected = C(EpicsSignal, 'CONNECTED')
-    ctrl_dtc = C(SignalWithRBV, 'CTRL_DTC')
-    ctrl_mca_roi = C(SignalWithRBV, 'CTRL_MCA_ROI')
-    debounce = C(SignalWithRBV, 'DEBOUNCE')
-    disconnect = C(EpicsSignal, 'DISCONNECT')
-    erase = C(EpicsSignal, 'ERASE')
-    # erase_array_counters = C(EpicsSignal, 'ERASE_ArrayCounters')
-    # erase_attr_reset = C(EpicsSignal, 'ERASE_AttrReset')
-    # erase_proc_reset_filter = C(EpicsSignal, 'ERASE_PROC_ResetFilter')
-    frame_count = C(EpicsSignalRO, 'FRAME_COUNT_RBV')
-    invert_f0 = C(SignalWithRBV, 'INVERT_F0')
-    invert_veto = C(SignalWithRBV, 'INVERT_VETO')
-    max_frames = C(EpicsSignalRO, 'MAX_FRAMES_RBV')
-    max_frames_driver = C(EpicsSignalRO, 'MAX_FRAMES_DRIVER_RBV')
-    max_num_channels = C(EpicsSignalRO, 'MAX_NUM_CHANNELS_RBV')
-    max_spectra = C(SignalWithRBV, 'MAX_SPECTRA')
-    xsp_name = C(EpicsSignal, 'NAME')
-    num_cards = C(EpicsSignalRO, 'NUM_CARDS_RBV')
-    num_channels = C(SignalWithRBV, 'NUM_CHANNELS')
-    num_frames_config = C(SignalWithRBV, 'NUM_FRAMES_CONFIG')
-    reset = C(EpicsSignal, 'RESET')
-    restore_settings = C(EpicsSignal, 'RESTORE_SETTINGS')
-    run_flags = C(SignalWithRBV, 'RUN_FLAGS')
-    save_settings = C(EpicsSignal, 'SAVE_SETTINGS')
-    trigger = C(EpicsSignal, 'TRIGGER')
-    # update = C(EpicsSignal, 'UPDATE')
-    # update_attr = C(EpicsSignal, 'UPDATE_AttrUpdate')
+    config_path = Cpt(SignalWithRBV, 'CONFIG_PATH', string=True)
+    config_save_path = Cpt(SignalWithRBV, 'CONFIG_SAVE_PATH', string=True)
+    connect = Cpt(EpicsSignal, 'CONNECT')
+    connected = Cpt(EpicsSignal, 'CONNECTED')
+    ctrl_dtc = Cpt(SignalWithRBV, 'CTRL_DTC')
+    ctrl_mca_roi = Cpt(SignalWithRBV, 'CTRL_MCA_ROI')
+    debounce = Cpt(SignalWithRBV, 'DEBOUNCE')
+    disconnect = Cpt(EpicsSignal, 'DISCONNECT')
+    erase = Cpt(EpicsSignal, 'ERASE')
+    # erase_array_counters = Cpt(EpicsSignal, 'ERASE_ArrayCounters')
+    # erase_attr_reset = Cpt(EpicsSignal, 'ERASE_AttrReset')
+    # erase_proc_reset_filter = Cpt(EpicsSignal, 'ERASE_PROC_ResetFilter')
+    frame_count = Cpt(EpicsSignalRO, 'FRAME_COUNT_RBV')
+    invert_f0 = Cpt(SignalWithRBV, 'INVERT_F0')
+    invert_veto = Cpt(SignalWithRBV, 'INVERT_VETO')
+    max_frames = Cpt(EpicsSignalRO, 'MAX_FRAMES_RBV')
+    max_frames_driver = Cpt(EpicsSignalRO, 'MAX_FRAMES_DRIVER_RBV')
+    max_num_channels = Cpt(EpicsSignalRO, 'MAX_NUM_CHANNELS_RBV')
+    max_spectra = Cpt(SignalWithRBV, 'MAX_SPECTRA')
+    xsp_name = Cpt(EpicsSignal, 'NAME')
+    num_cards = Cpt(EpicsSignalRO, 'NUM_CARDS_RBV')
+    num_channels = Cpt(SignalWithRBV, 'NUM_CHANNELS')
+    num_frames_config = Cpt(SignalWithRBV, 'NUM_FRAMES_CONFIG')
+    reset = Cpt(EpicsSignal, 'RESET')
+    restore_settings = Cpt(EpicsSignal, 'RESTORE_SETTINGS')
+    run_flags = Cpt(SignalWithRBV, 'RUN_FLAGS')
+    save_settings = Cpt(EpicsSignal, 'SAVE_SETTINGS')
+    trigger = Cpt(EpicsSignal, 'TRIGGER')
+    # update = Cpt(EpicsSignal, 'UPDATE')
+    # update_attr = Cpt(EpicsSignal, 'UPDATE_AttrUpdate')
 
 
 class Xspress3ROISettings(PluginBase):
@@ -331,15 +331,15 @@ class Xspress3ROI(Device):
     bin_high = FC(SignalWithRBV, '{self.channel.prefix}{self.bin_suffix}_HLM')
 
     # derived from the bin signals, low and high electron volt settings:
-    ev_low = C(EvSignal, parent_attr='bin_low')
-    ev_high = C(EvSignal, parent_attr='bin_high')
+    ev_low = Cpt(EvSignal, parent_attr='bin_low')
+    ev_high = Cpt(EvSignal, parent_attr='bin_high')
 
     # C{channel}_  ROI{self.roi_num}
-    value = C(EpicsSignalRO, 'Value_RBV')
-    value_sum = C(EpicsSignalRO, 'ValueSum_RBV')
+    value = Cpt(EpicsSignalRO, 'Value_RBV')
+    value_sum = Cpt(EpicsSignalRO, 'ValueSum_RBV')
 
-    enable = C(SignalWithRBV, 'EnableCallbacks')
-    # ad_plugin = C(Xspress3ROISettings, '')
+    enable = Cpt(SignalWithRBV, 'EnableCallbacks')
+    # ad_plugin = Cpt(Xspress3ROISettings, '')
 
     def __init__(self, prefix, *, roi_num=0, use_sum=False,
                  read_attrs=None, configuration_attrs=None, parent=None,
@@ -448,7 +448,7 @@ class Xspress3Channel(Device):
     roi_sum_name_format = 'Det{self.channel_num}_{roi_name}_sum'
 
     rois = DDC(make_rois(range(1, 17)))
-    vis_enabled = C(EpicsSignal, 'PluginControlVal')
+    vis_enabled = Cpt(EpicsSignal, 'PluginControlVal')
 
     def __init__(self, prefix, *, channel_num=None, **kwargs):
         self.channel_num = int(channel_num)
@@ -497,7 +497,7 @@ class Xspress3Channel(Device):
 
 
 class Xspress3Detector(DetectorBase):
-    settings = C(Xspress3DetectorSettings, '')
+    settings = Cpt(Xspress3DetectorSettings, '')
 
     external_trig = Cpt(Signal, value=False,
                         doc='Use external triggering')
@@ -509,7 +509,7 @@ class Xspress3Detector(DetectorBase):
                            doc='Make directories on the DAQ side')
 
     # XF:03IDC-ES{Xsp:1}           C1_   ...
-    # channel1 = C(Xspress3Channel, 'C1_', channel_num=1)
+    # channel1 = Cpt(Xspress3Channel, 'C1_', channel_num=1)
 
     data_key = XRF_DATA_KEY
 
@@ -677,30 +677,3 @@ class XspressTrigger(BlueskyInterface):
                 ch = getattr(self, sn)
                 self.dispatch(ch.name, trigger_time)
         return self._status
-
-
-class HxnXspress3Detector(XspressTrigger, Xspress3Detector):
-    channel1 = C(Xspress3Channel, 'C1_', channel_num=1)
-    channel2 = C(Xspress3Channel, 'C2_', channel_num=2)
-    channel3 = C(Xspress3Channel, 'C3_', channel_num=3)
-
-    hdf5 = Cpt(Xspress3FileStore, 'HDF5:',
-               write_path_template='/data/%Y/%m/%d/')
-
-    def __init__(self, prefix, *, configuration_attrs=None, read_attrs=None,
-                 **kwargs):
-        if configuration_attrs is None:
-            configuration_attrs = ['external_trig', 'total_points',
-                                   'spectra_per_point']
-        if read_attrs is None:
-            read_attrs = ['channel1', 'channel2', 'channel3', 'hdf5']
-        super().__init__(prefix, configuration_attrs=configuration_attrs,
-                         read_attrs=read_attrs, **kwargs)
-
-    # Currently only using three channels. Uncomment these to enable more
-    # channels:
-    # channel4 = C(Xspress3Channel, 'C4_', channel_num=4)
-    # channel5 = C(Xspress3Channel, 'C5_', channel_num=5)
-    # channel6 = C(Xspress3Channel, 'C6_', channel_num=6)
-    # channel7 = C(Xspress3Channel, 'C7_', channel_num=7)
-    # channel8 = C(Xspress3Channel, 'C8_', channel_num=8)

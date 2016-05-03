@@ -167,8 +167,7 @@ class HxnTimepixDetector(TimepixDetector):
             read_attrs = list(read_attrs) + ['hdf5']
 
         super().__init__(prefix, configuration_attrs=configuration_attrs,
-                         read_attrs=read_attrs,
-                         **kwargs)
+                         read_attrs=read_attrs, **kwargs)
 
         # signal aliases?
         self.total_points = self.mode_settings.total_points

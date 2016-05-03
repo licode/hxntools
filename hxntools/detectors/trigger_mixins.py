@@ -132,6 +132,7 @@ class HxnModalTrigger(HxnModalBase, TriggerBase):
         self._status = DeviceStatus(self)
         self._status._finished()
         # TODO this timestamp is inaccurate!
+        print('dispatch', self._image_name)
         self.dispatch(self._image_name, ttime.time())
         return self._status
 
