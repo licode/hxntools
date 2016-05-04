@@ -107,194 +107,79 @@ def _pre_scan(total_points):
     yield Msg('hxn_scan_setup', detectors=gs.DETS, total_points=total_points)
 
 
+def _add_exposure_time_to_md(md, time):
+    if md is None:
+        md = {}
+    else:
+        md = dict(md)
+
+    if 'exposure_time' not in md:
+        md['exposure_time'] = time
+    return md
+
+
 @functools.wraps(spec_api.ascan)
-def absolute_scan(motor, start, finish, intervals, time=None, **kwargs):
+def absolute_scan(motor, start, finish, intervals, time=None, *, md=None):
+    md = _add_exposure_time_to_md(md, time)
     yield from _pre_scan(total_points=intervals + 1)
-    yield from spec_api.ascan(motor, start, finish, intervals, time, **kwargs)
+    yield from spec_api.ascan(motor, start, finish, intervals, time, md=md)
 
 
 @functools.wraps(spec_api.dscan)
-def relative_scan(motor, start, finish, intervals, time=None, **kwargs):
+def relative_scan(motor, start, finish, intervals, time=None, *, md=None):
+    md = _add_exposure_time_to_md(md, time)
     yield from _pre_scan(total_points=intervals + 1)
-    yield from spec_api.dscan(motor, start, finish, intervals, time, **kwargs)
+    yield from spec_api.dscan(motor, start, finish, intervals, time, md=md)
 
 
-@plans.planify
-def absolute_fermat(x_motor, y_motor, x_range, y_range, dr, factor, time=None,
-                    *, per_step=None, md=None):
-    '''Absolute fermat spiral scan, centered around (0, 0)
-
-    Parameters
-    ----------
-    x_motor : object
-        any 'setable' object (motor, temp controller, etc.)
-    y_motor : object
-        any 'setable' object (motor, temp controller, etc.)
-    x_range : float
-        x range of spiral
-    y_range : float
-        y range of spiral
-    dr : float
-        delta radius
-    factor : float, optional
-        radius gets divided by this
-    time : float, optional
-        applied to any detectors that have a `count_time` setting
-    per_step : callable, optional
-        hook for cutomizing action of inner loop (messages per step)
-        See docstring of bluesky.plans.one_nd_step (the default) for
-        details.
-    md : dict, optional
-        metadata
-    '''
+@functools.wraps(spec_api.afermat)
+def absolute_fermat(x_motor, y_motor, x_start, y_start, x_range, y_range, dr,
+                    factor, time=None, *, per_step=None, md=None):
     px, py = scan_patterns.spiral_fermat(x_range, y_range, dr, factor)
+    total_points = len(px)
 
-    cyc = cycler(x_motor, px)
-    cyc += cycler(y_motor, py)
-
-    total_points = len(cyc)
-
-    plan_stack = deque()
-    plan_stack.append(_pre_scan(total_points=total_points))
-
-    gs = get_gs()
-    subs = {'all': [LiveTable([x_motor, y_motor, gs.PLOT_Y] + gs.TABLE_COLS),
-                    spec_api.setup_plot([x_motor]),
-                    ]}
-
-    with plans.subs_context(plan_stack, subs):
-        plan = plans.scan_nd(gs.DETS, cyc, per_step=per_step, md=md)
-        plan = plans.configure_count_time(plan, time)
-        plan_stack.append(plan)
-    return plan_stack
+    md = _add_exposure_time_to_md(md, time)
+    yield from _pre_scan(total_points=total_points)
+    yield from spec_api.afermat(x_motor, y_motor, x_start, y_start, x_range,
+                                y_range, dr, factor, time=time,
+                                per_step=per_step, md=md)
 
 
-@plans.planify
+@functools.wraps(spec_api.fermat)
 def relative_fermat(x_motor, y_motor, x_range, y_range, dr, factor, time=None,
                     *, per_step=None, md=None):
-    '''Relative fermat spiral scan
+    px, py = scan_patterns.spiral_fermat(x_range, y_range, dr, factor)
+    total_points = len(px)
 
-    Parameters
-    ----------
-    x_motor : object
-        any 'setable' object (motor, temp controller, etc.)
-    y_motor : object
-        any 'setable' object (motor, temp controller, etc.)
-    x_range : float
-        x range of spiral
-    y_range : float
-        y range of spiral
-    dr : float
-        delta radius
-    factor : float, optional
-        radius gets divided by this
-    time : float, optional
-        applied to any detectors that have a `count_time` setting
-    per_step : callable, optional
-        hook for cutomizing action of inner loop (messages per step)
-        See docstring of bluesky.plans.one_nd_step (the default) for
-        details.
-    md : dict, optional
-        metadata
-    '''
-    plan = absolute_fermat(x_motor, y_motor, x_range, y_range, dr, factor,
-                           time=time, per_step=per_step, md=md)
-    plan = plans.relative_set(plan)  # re-write trajectory as relative
-    plan = plans.reset_positions(plan)  # return motors to starting pos
-    return [plan]
+    md = _add_exposure_time_to_md(md, time)
+    yield from _pre_scan(total_points=total_points)
+    yield from spec_api.fermat(x_motor, y_motor, x_range, y_range, dr, factor,
+                               time=time, per_step=per_step, md=md)
 
 
-@plans.planify
-def absolute_spiral(x_motor, y_motor, x_range, y_range, dr, nth, time=None,
-                    *, per_step=None, md=None):
-    '''Simple spiral scan, centered around (0, 0)
-
-    'Simple' in this context means that the spiral is drawn as one would
-    expect: in a continuous trajectory from the innermost point outward. It is
-    also simple in comparison to the trajectory in a fermat spiral.
-
-    Parameters
-    ----------
-    x_motor : object
-        any 'setable' object (motor, temp controller, etc.)
-    y_motor : object
-        any 'setable' object (motor, temp controller, etc.)
-    x_range : float
-        X range, in engineering units
-    y_range : float
-        Y range, in engineering units
-    dr : float
-        Delta radius, in engineering units
-    nth : float
-        Number of theta steps
-    time : float, optional
-        applied to any detectors that have a `count_time` setting
-    per_step : callable, optional
-        hook for cutomizing action of inner loop (messages per step)
-        See docstring of bluesky.plans.one_nd_step (the default) for
-        details.
-    md : dict, optional
-        metadata
-    '''
+@functools.wraps(spec_api.aspiral)
+def absolute_spiral(x_motor, y_motor, x_start, y_start, x_range, y_range, dr,
+                    nth, time=None, *, per_step=None, md=None):
     px, py = scan_patterns.spiral_simple(x_range, y_range, dr, nth)
+    total_points = len(px)
 
-    cyc = cycler(x_motor, px)
-    cyc += cycler(y_motor, py)
-
-    total_points = len(cyc)
-
-    plan_stack = deque()
-    plan_stack.append(_pre_scan(total_points=total_points))
-
-    gs = get_gs()
-    subs = {'all': [LiveTable([x_motor, y_motor, gs.PLOT_Y] + gs.TABLE_COLS),
-                    spec_api.setup_plot([x_motor]),
-                    ]}
-
-    with plans.subs_context(plan_stack, subs):
-        plan = plans.scan_nd(gs.DETS, cyc, per_step=per_step, md=md)
-        plan = plans.configure_count_time(plan, time)
-        plan_stack.append(plan)
-    return plan_stack
+    md = _add_exposure_time_to_md(md, time)
+    yield from _pre_scan(total_points=total_points)
+    yield from spec_api.aspiral(x_motor, y_motor, x_start, y_start, x_range,
+                                y_range, dr, nth, time=time,
+                                per_step=per_step, md=md)
 
 
-@plans.planify
-def relative_spiral(x_motor, y_motor, x_range, y_range, dr, factor, time=None,
+@functools.wraps(spec_api.spiral)
+def relative_spiral(x_motor, y_motor, x_range, y_range, dr, nth, time=None,
                     *, per_step=None, md=None):
-    '''Relative, simple spiral scan
+    px, py = scan_patterns.spiral_simple(x_range, y_range, dr, nth)
+    total_points = len(px)
 
-    'Simple' in this context means that the spiral is drawn as one would
-    expect: in a continuous trajectory from the innermost point outward. It is
-    also simple in comparison to the trajectory in a fermat spiral.
-
-    Parameters
-    ----------
-    x_motor : object
-        any 'setable' object (motor, temp controller, etc.)
-    y_motor : object
-        any 'setable' object (motor, temp controller, etc.)
-    x_range : float
-        X range, in engineering units
-    y_range : float
-        Y range, in engineering units
-    dr : float
-        Delta radius, in engineering units
-    nth : float
-        Number of theta steps
-    time : float, optional
-        applied to any detectors that have a `count_time` setting
-    per_step : callable, optional
-        hook for cutomizing action of inner loop (messages per step)
-        See docstring of bluesky.plans.one_nd_step (the default) for
-        details.
-    md : dict, optional
-        metadata
-    '''
-    plan = absolute_spiral(x_motor, y_motor, x_range, y_range, dr, factor,
-                           time=time, per_step=per_step, md=md)
-    plan = plans.relative_set(plan)  # re-write trajectory as relative
-    plan = plans.reset_positions(plan)  # return motors to starting pos
-    return [plan]
+    md = _add_exposure_time_to_md(md, time)
+    yield from _pre_scan(total_points=total_points)
+    yield from spec_api.spiral(x_motor, y_motor, x_range, y_range, dr, nth,
+                               time=time, per_step=per_step, md=md)
 
 
 @functools.wraps(spec_api.mesh)
@@ -307,15 +192,16 @@ def absolute_mesh(*args, time=None, md=None):
     total_points = 1
     for motor, start, stop, num in chunked(args, 4):
         total_points *= num
+
+    md = _add_exposure_time_to_md(md, time)
     yield from _pre_scan(total_points=total_points)
     yield from spec_api.mesh(*args, time=time, md=md)
 
 
 @functools.wraps(absolute_mesh)
 def relative_mesh(*args, time=None, md=None):
+    md = _add_exposure_time_to_md(md, time)
+
     plan = absolute_mesh(*args, time=time, md=md)
     plan = plans.relative_set(plan)  # re-write trajectory as relative
     yield from plans.reset_positions(plan)
-
-
-# TODO: exposure time recording!
