@@ -28,8 +28,8 @@ class TriggerBase(BlueskyInterface):
 class HxnModalSettings(Device):
     mode = Cpt(Signal, value='internal',
                doc='Triggering mode (external/external)')
-    scan_type = Cpt(Signal, value='?',
-                    doc='Scan type (?)')
+    scan_type = Cpt(Signal, value='step',
+                    doc='Scan type (step/scaler)')
     make_directories = Cpt(Signal, value=True,
                            doc='Make directories on the DAQ side')
     total_points = Cpt(Signal, value=2,
