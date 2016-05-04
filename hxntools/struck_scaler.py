@@ -1,8 +1,10 @@
 import collections
 from ophyd import (EpicsScaler, Device,
                    Component as Cpt, DynamicDeviceComponent as DDC,
-                   EpicsSignal, EpicsSignalRO, Signal)
+                   EpicsSignal, Signal)
 from ophyd.mca import EpicsMCARecord
+from ophyd.status import DeviceStatus
+from ophyd.device import Staged
 from .detectors.trigger_mixins import HxnModalBase
 
 
@@ -118,6 +120,8 @@ class HxnTriggeringScaler(HxnModalBase, StruckScaler):
         self.stage_sigs[self.stop_all] = 1
 
     def mode_internal(self):
+        super().mode_internal()
+
         settings = self.mode_settings
         scan_type = settings.scan_type.get()
 
@@ -125,6 +129,8 @@ class HxnTriggeringScaler(HxnModalBase, StruckScaler):
         settings.triggers.put(list(triggers))
 
     def mode_external(self):
+        super().mode_external()
+
         self.stage_sigs[self.channel_advance] = 'External'
         self.stage_sigs[self.input_mode] = 'Mode 2'
         self.stage_sigs[self.nuse_all] = self.mode_settings.total_points.get()
@@ -132,12 +138,22 @@ class HxnTriggeringScaler(HxnModalBase, StruckScaler):
         self.stage_sigs[self.erase_start] = 1
         self.stage_sigs.move_to_end(self.erase_start)
 
+    def trigger(self):
+        if self._staged != Staged.yes:
+            raise RuntimeError("This detector is not ready to trigger."
+                               "Call the stage() method before triggering.")
+
+        mode = self.mode_settings.mode.get()
+        mode_trigger = getattr(self, 'trigger_{}'.format(mode))
+        return mode_trigger()
+
     def trigger_internal(self):
-        print('scaler trigger!')
-        return EpicsScaler.trigger(self)
+        return super().trigger()
 
     def trigger_external(self):
-        raise NotImplementedError()
+        self._status = DeviceStatus(self)
+        self._status._finished()
+        return self._status
 
 
 class HxnScaler(StruckScaler):
