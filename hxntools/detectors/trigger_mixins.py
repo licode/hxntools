@@ -100,7 +100,7 @@ class HxnModalTrigger(HxnModalBase, TriggerBase):
 
     def stage(self):
         self._acquisition_signal.subscribe(self._acquire_changed)
-        super().stage()
+        staged = super().stage()
 
         # In external triggering mode, the devices is only triggered once at
         # stage
@@ -110,7 +110,7 @@ class HxnModalTrigger(HxnModalBase, TriggerBase):
 
     def unstage(self):
         try:
-            super().unstage()
+            return super().unstage()
         finally:
             self._acquisition_signal.clear_sub(self._acquire_changed)
 
@@ -132,7 +132,6 @@ class HxnModalTrigger(HxnModalBase, TriggerBase):
         self._status = DeviceStatus(self)
         self._status._finished()
         # TODO this timestamp is inaccurate!
-        print('dispatch', self._image_name)
         self.dispatch(self._image_name, ttime.time())
         return self._status
 

@@ -651,8 +651,9 @@ class XspressTrigger(BlueskyInterface):
         super().stage()
 
     def unstage(self):
-        super().unstage()
+        ret = super().unstage()
         self._acquisition_signal.clear_sub(self._acquire_changed)
+        return ret
 
     def _acquire_changed(self, value=None, old_value=None, **kwargs):
         "This is called when the 'acquire' signal changes."
