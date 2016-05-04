@@ -1,18 +1,18 @@
 import asyncio
 import functools
-import ophyd
 import logging
-from collections import deque
 
 from boltons.iterutils import chunked
-from cycler import cycler
 
 from bluesky import (plans, spec_api, Msg)
 from bluesky.global_state import get_gs
-from bluesky.callbacks import LiveTable, LivePlot, LiveRaster
 
 from ophyd import (Device, Component as Cpt, EpicsSignal)
 from .detectors.trigger_mixins import HxnModalBase
+
+# TODO: still need these scan patterns to determine the number
+#       of points for spiral scans (without counting bluesky
+#       messages...)
 from . import scan_patterns
 
 logger = logging.getLogger(__name__)
