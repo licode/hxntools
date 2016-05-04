@@ -112,6 +112,7 @@ class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
     def stop(self):
         ret = super().stop()
         self.capture.put(0)
+        return ret
 
     def kickoff(self):
         # TODO
