@@ -49,7 +49,7 @@ def cmd_scan_setup(msg):
                   if isinstance(det, HxnModalBase)]
 
     mode = 'internal'
-    for det in detectors:
+    for det in modal_dets:
         logger.debug('[internal trigger] Setting up detector %s', det.name)
         settings = det.mode_settings
 
