@@ -118,6 +118,13 @@ def _add_exposure_time_to_md(md, time):
     return md
 
 
+@functools.wraps(spec_api.ct)
+def count(num=1, delay=None, time=None, *, md=None):
+    md = _add_exposure_time_to_md(md, time)
+    yield from _pre_scan(total_points=num)
+    yield from spec_api.ct(num=num, delay=delay, time=time, md=md)
+
+
 @functools.wraps(spec_api.ascan)
 def absolute_scan(motor, start, finish, intervals, time=None, *, md=None):
     md = _add_exposure_time_to_md(md, time)
