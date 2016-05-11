@@ -563,36 +563,6 @@ class Xspress3Detector(DetectorBase):
             if roi.enable.get():
                 yield roi
 
-    def open_hdf5_wait(self, fn, *, max_retries=2, try_stop=False):
-        '''Wait for the HDF5 file specified to be closed'''
-        warned = False
-        retry = 0
-        while retry < max_retries:
-            retry += 1
-            try:
-                return h5py.File(fn, 'r')
-            except (IOError, OSError):
-                if not warned:
-                    logger.error('Xspress3 hdf5 file still open; press '
-                                 'Ctrl-C to cancel')
-                    warned = True
-
-                if try_stop:
-                    time.sleep(2.0)
-                    self.hdf5.capture.put(0)
-                    self.settings.acquire.put(0)
-            except KeyboardInterrupt:
-                raise RuntimeError('Unable to open HDF5 file; interrupted '
-                                   'by Ctrl-C')
-            else:
-                if warned:
-                    logger.info('Xspress3 hdf5 file opened')
-                break
-
-        if retry >= max_retries:
-            raise RuntimeError('Unable to open HDF5 file; exceeded maximum '
-                               'retries')
-
     def read_hdf5(self, fn, *, rois=None, max_retries=2):
         '''Read ROI data from an HDF5 file using the current ROI configuration
 
@@ -607,8 +577,10 @@ class Xspress3Detector(DetectorBase):
             rois = self.enabled_rois
 
         num_points = self.settings.num_images.get()
-        hdf = self.open_hdf5_wait(fn, max_retries=max_retries,
-                                  try_stop=False)
+        if isinstance(fn, h5py.File):
+            hdf = fn
+        else:
+            hdf = h5py.File(fn, 'r')
 
         RoiTuple = Xspress3ROI.get_device_tuple()
 
