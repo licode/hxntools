@@ -486,8 +486,9 @@ class Xspress3Channel(Device):
 
         roi.configure(ev_low, ev_high)
         if name is not None:
-            roi.value.name = self.roi_name_format.format(self=self,
-                                                         roi_name=name)
+            roi_name = self.roi_name_format.format(self=self, roi_name=name)
+            roi.name = roi_name
+            roi.value.name = roi_name
             roi.value_sum.name = self.roi_sum_name_format.format(self=self,
                                                                  roi_name=name)
 
