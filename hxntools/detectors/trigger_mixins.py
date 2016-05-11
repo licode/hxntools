@@ -78,6 +78,11 @@ class HxnModalTrigger(HxnModalBase, TriggerBase):
         self._image_name = image_name
         self._external_acquire_at_stage = True
 
+    def stop(self):
+        ret = super().stop()
+        self._acquisition_signal.put(0, wait=True)
+        return ret
+
     def mode_internal(self):
         super().mode_internal()
 
