@@ -118,6 +118,8 @@ class HxnTriggeringScaler(HxnModalBase, StruckScaler):
         self.stage_sigs[self.output_mode] = 'Mode 1'
         # Ensure that the scaler isn't counting in mcs mode for any reason
         self.stage_sigs[self.stop_all] = 1
+        # Ensure that the scaler isn't counting
+        self.stage_sigs[self.count] = 0
 
     def mode_internal(self):
         super().mode_internal()
