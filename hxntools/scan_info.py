@@ -48,8 +48,11 @@ def get_scan_info(header):
     try:
         scan_args = start_doc['scan_args']
     except KeyError:
-        logger.error('No scan args for scan %s', start_doc['uid'])
-        return info
+        try:
+            scan_args = start_doc['plan_args']
+        except KeyError:
+            logger.error('No scan args for scan %s', start_doc['uid'])
+            return info
 
     scan_type = start_doc['scan_type']
     motors = None
