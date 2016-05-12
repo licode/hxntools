@@ -142,6 +142,8 @@ class HxnTriggeringScaler(HxnModalBase, StruckScaler):
         triggers = self.scan_type_triggers[scan_type]
         settings.triggers.put(list(triggers))
 
+        self.stage_sigs[self.preset_time] = self.count_time.get()
+
     def mode_external(self):
         super().mode_external()
 
