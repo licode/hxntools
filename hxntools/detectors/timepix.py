@@ -121,11 +121,12 @@ class TimepixFileStoreHDF5(FileStorePluginBase, FileStoreIterativeWrite):
                                 ])
 
     def stage(self):
-        super().stage()
+        staged = super().stage()
         res_kwargs = {'frame_per_point': 1}
         logger.debug("Inserting resource with filename %s", self._fn)
         self._resource = fsapi.insert_resource(self._spec, self._fn,
                                                res_kwargs)
+        return staged
 
     def make_filename(self):
         fn, read_path, write_path = super().make_filename()
@@ -141,7 +142,7 @@ class HDF5PluginWithFileStore(HDF5Plugin, TimepixFileStoreHDF5):
 
         # ensure that setting capture is the last thing that's done
         self.stage_sigs.move_to_end(self.capture)
-        super().stage()
+        return super().stage()
 
 
 class HxnTimepixDetector(TimepixDetector):

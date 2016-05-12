@@ -622,7 +622,7 @@ class XspressTrigger(BlueskyInterface):
     def stage(self):
         self._abs_trigger_count = 0
         self._acquisition_signal.subscribe(self._acquire_changed)
-        super().stage()
+        return super().stage()
 
     def unstage(self):
         ret = super().unstage()

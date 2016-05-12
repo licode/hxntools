@@ -67,7 +67,7 @@ class HxnModalBase(Device):
         if self._staged != Staged.yes:
             self.mode_setup(self.mode)
 
-        super().stage()
+        return super().stage()
 
 
 class HxnModalTrigger(HxnModalBase, TriggerBase):
@@ -112,6 +112,7 @@ class HxnModalTrigger(HxnModalBase, TriggerBase):
         mode = self.mode_settings.mode.get()
         if mode == 'external' and self._external_acquire_at_stage:
             self._acquisition_signal.put(1, wait=False)
+        return staged
 
     def unstage(self):
         try:
