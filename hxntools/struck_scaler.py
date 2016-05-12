@@ -121,10 +121,22 @@ class HxnTriggeringScaler(HxnModalBase, StruckScaler):
         # Ensure that the scaler isn't counting
         self.stage_sigs[self.count] = 0
 
+        self.external_signals = [self.erase_start,
+                                 self.start_all,
+                                 self.input_mode,
+                                 self.channel_advance,
+                                 self.nuse_all]
+
     def mode_internal(self):
         super().mode_internal()
 
         settings = self.mode_settings
+
+        # ensure that no external signals are in the stage sigs list:
+        for ext_sig in self.external_signals:
+            if ext_sig in self.stage_sigs:
+                del self.stage_sigs[ext_sig]
+
         scan_type = settings.scan_type.get()
 
         triggers = self.scan_type_triggers[scan_type]
