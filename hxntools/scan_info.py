@@ -24,19 +24,27 @@ def _eval(scan_args):
     return eval(scan_args, collections.defaultdict(no_op))
 
 
-step_1d = ('InnerProductAbsScan', 'HxnInnerAbsScan',
-           'InnerProductDeltaScan', 'HxnInnerDeltaScan',
-           'AbsScan', 'HxnAbsScan',
-           'DeltaScan', 'HxnDeltaScan')
+scan_types = dict(
+    v0=dict(step_1d=('InnerProductAbsScan', 'HxnInnerAbsScan',
+                     'InnerProductDeltaScan', 'HxnInnerDeltaScan', 'AbsScan',
+                     'HxnAbsScan', 'DeltaScan', 'HxnDeltaScan'),
+            step_2d=('OuterProductAbsScan', 'HxnOuterAbsScan', 'relative_mesh',
+                     'absolute_mesh'),
+            spiral=('HxnFermatPlan', 'relative_fermat', 'absolute_fermat',
+                    'relative_spiral', 'absolute_spiral'),
+            fly=('FlyPlan1D', 'FlyPlan2D'),
+            ),
+    v1=dict(step_1d=('relative_scan', 'absolute_scan', 'count'),
+            step_2d=('relative_mesh', 'absolute_mesh'),
+            spiral=('spiral_fermat', 'relative_spiral_fermat',
+                    'spiral', 'relative_spiral', ),
+            fly=('FlyPlan1D', 'FlyPlan2D'),
+            ),
+)
 
-step_2d = ('OuterProductAbsScan', 'HxnOuterAbsScan')
-fermat_scans = ('HxnFermatPlan', )
-fly_scans = ('FlyPlan1D', 'FlyPlan2D')
 
 
-def get_scan_info(header):
-    # TODO some of this can/should be redone with the new metadatastore
-    # fields (derived and otherwise)
+def _get_scan_info_bs_v0(header):
     info = {'num': 0,
             'dimensions': [],
             'motors': [],
@@ -54,25 +62,43 @@ def get_scan_info(header):
             logger.error('No scan args for scan %s', start_doc['uid'])
             return info
 
-    scan_type = start_doc['scan_type']
+    try:
+        scan_type = start_doc['scan_type']
+    except KeyError:
+        try:
+            scan_type = start_doc['plan_type']
+        except KeyError:
+            logger.error('No plan type for scan %s', start_doc['uid'])
+            return info
+
     motors = None
     range_ = None
     pyramid = False
     motor_keys = None
     dimensions = []
 
+    scan_type_info = scan_types['v0']
+    step_1d = scan_type_info['step_1d']
+    step_2d = scan_type_info['step_2d']
+    spiral_scans = scan_type_info['spiral']
+    fly_scans = scan_type_info['fly']
+
     if scan_type in fly_scans:
         logger.debug('Scan %s (%s) is a fly scan (%s)', start_doc.scan_id,
                      start_doc.uid, scan_type)
         dimensions = start_doc['dimensions']
-        motors = start_doc['axes']
+        try:
+            motors = start_doc['motors']
+        except KeyError:
+            motors = start_doc['axes']
+
         pyramid = start_doc['fly_type'] == 'pyramid'
         try:
             range_ = start_doc['scan_range']
         except KeyError:
             try:
-                range_ = [(float(scan_args['scan_start']),
-                           float(scan_args['scan_end']))]
+                range_ = [(float(start_doc['scan_start']),
+                           float(start_doc['scan_end']))]
             except (KeyError, ValueError):
                 pass
     elif scan_type in step_2d:
@@ -99,7 +125,7 @@ def get_scan_info(header):
             dimensions = []
             range_ = []
 
-    elif scan_type in fermat_scans:
+    elif scan_type in spiral_scans:
         motor_keys = ['x_motor', 'y_motor']
         dimensions = [int(start_doc['num'])]
         logger.debug('Scan %s (%s) is a fermat scan (%s) %d points',
@@ -136,6 +162,87 @@ def get_scan_info(header):
 
     num = np.product(dimensions)
 
+    info['num'] = num
+    info['dimensions'] = dimensions
+    info['motors'] = motors
+    info['range'] = range_
+    info['pyramid'] = pyramid
+    return info
+
+
+def get_scan_info(header):
+    start_doc = header['start']
+    if 'scan_args' in start_doc:
+        return _get_scan_info_bs_v0(header)
+    elif 'plan_args' in start_doc:
+        return _get_scan_info_bs_v1(header)
+    else:
+        raise RuntimeError('Unknown start document information')
+
+
+
+def _get_scan_info_bs_v1(header):
+    start_doc = header['start']
+    info = {'num': 0,
+            'dimensions': [],
+            'motors': [],
+            'range': [],
+            'pyramid': False,
+            }
+
+    plan_args = start_doc['plan_args']
+    plan_type = start_doc['plan_type']
+    plan_name = start_doc['plan_name']
+
+    motors = None
+    range_ = None
+    pyramid = False
+    dimensions = []
+
+    plan_type_info = scan_types['v1']
+    step_1d = plan_type_info['step_1d']
+    step_2d = plan_type_info['step_2d']
+    spiral_scans = plan_type_info['spiral']
+    fly_scans = plan_type_info['fly']
+
+    motors = start_doc['motors']
+
+    if plan_type in fly_scans:
+        logger.debug('Scan %s (%s) is a fly scan (%s %s)', start_doc.scan_id,
+                     start_doc.uid, plan_type, plan_name)
+        dimensions = start_doc['dimensions']
+        pyramid = start_doc['fly_type'] == 'pyramid'
+        range_ = start_doc['scan_range']
+    elif plan_name in step_2d:
+        logger.debug('Scan %s (%s) is an ND scan (%s %s)', start_doc.scan_id,
+                     start_doc.uid, plan_type, plan_name)
+
+        args = plan_args['args']
+        range0 = args[1::5]
+        range1 = args[2::5]
+        range_ = list(zip(range0, range1))
+        dimensions = args[3::5]
+    elif plan_name in spiral_scans:
+        # TODO insert 'num' in
+        dimensions = [int(start_doc['num_step'])]
+        logger.debug('Scan %s (%s) is a spiral scan (%s %s) %d points',
+                     start_doc.scan_id, start_doc.uid, plan_type,
+                     plan_name, dimensions[0])
+        range_ = [plan_args['x_range'], plan_args['y_range']]
+    elif plan_name in step_1d or 'num' in start_doc:
+        logger.debug('Scan %s (%s) is a 1D scan (%s %s)', start_doc.scan_id,
+                     start_doc.uid, plan_type, plan_name)
+        try:
+            dimensions = [int(start_doc['num'])]
+        except KeyError:
+            # TODO
+            dimensions = [1]
+    else:
+        msg = ('Unrecognized plan type/name (uid={} name={} type={})'
+               ''.format(start_doc.uid, plan_name, plan_type))
+        raise RuntimeError(msg)
+
+    num = np.product(dimensions)
     info['num'] = num
     info['dimensions'] = dimensions
     info['motors'] = motors
