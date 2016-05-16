@@ -180,7 +180,6 @@ def get_scan_info(header):
         raise RuntimeError('Unknown start document information')
 
 
-
 def _get_scan_info_bs_v1(header):
     start_doc = header['start']
     info = {'num': 0,

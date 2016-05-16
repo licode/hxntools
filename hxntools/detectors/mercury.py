@@ -1,6 +1,4 @@
-from ophyd import (Component as Cpt, Device, EpicsSignal, EpicsSignalRO,
-                   EpicsSignalWithRBV, DeviceStatus)
-from ophyd.device import (BlueskyInterface, Staged)
+from ophyd import (Component as Cpt)
 from ophyd.mca import (MercuryDXP, EpicsMCARecord, EpicsDXPMultiElementSystem,
                        SoftDXPTrigger)
 
