@@ -43,7 +43,7 @@ class MerlinDetector(AreaDetector):
               )
 
 
-class MerlinFileStoreHDF5(FileStorePluginBase, FileStoreIterativeWrite):
+class MerlinFileStoreHDF5(FileStorePluginBase, FileStoreBulkReadable):
     _spec = 'TPX_HDF5'
 
     def __init__(self, *args, **kwargs):
