@@ -184,6 +184,9 @@ class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
         spec_per_point = self.parent.spectra_per_point.get()
         total_capture = total_points * spec_per_point
 
+        # stop previous acquisition
+        self.stage_sigs[self.settings.acquire] = 0
+
         # re-order the stage signals and disable the calc record which is
         # interfering with the capture count
         self.stage_sigs.pop(self.num_capture, None)
@@ -191,7 +194,6 @@ class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
         self.stage_sigs[self.num_capture_calc_disable] = 1
 
         if ext_trig:
-            # TODO some self._master logic went here?
             logger.debug('Setting up external triggering')
             self.stage_sigs[self.settings.trigger_mode] = 'TTL Veto Only'
             self.stage_sigs[self.settings.num_images] = total_capture
@@ -213,10 +215,6 @@ class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
 
         logger.debug('Erasing old spectra')
         self.settings.erase.put(1, wait=True)
-
-        if ext_trig:
-            logger.debug('Starting acquisition (waiting for triggers)')
-            self.stage_sigs[self.settings.acquire] = 1
 
         # this must be set after self.settings.num_images because at the Epics
         # layer  there is a helpful link that sets this equal to that (but
