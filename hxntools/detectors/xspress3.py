@@ -319,7 +319,7 @@ class Xspress3DetectorSettings(CamBase):
 
 class Xspress3ROISettings(PluginBase):
     '''Full areaDetector plugin settings'''
-    pass
+    array_data = Cpt(EpicsSignalRO, 'ArrayData_RBV')
 
 
 class Xspress3ROI(Device):
@@ -367,6 +367,11 @@ class Xspress3ROI(Device):
 
         super().__init__(prefix, parent=parent, read_attrs=read_attrs,
                          configuration_attrs=configuration_attrs, **kwargs)
+
+    @property
+    def settings(self):
+        '''Full areaDetector settings'''
+        return self._ad_plugin
 
     @property
     def channel(self):
