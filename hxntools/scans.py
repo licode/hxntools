@@ -92,13 +92,14 @@ def _debug_next_scan_id(cmd):
     gs.RE.md['scan_id'] = 0
 
 
-def setup():
+def setup(*, debug_mode=False):
     gs = get_gs()
     gs.RE.register_command('hxn_scan_setup', cmd_scan_setup)
 
-    # TODO debugging
-    # gs.RE.register_command('hxn_next_scan_id', cmd_next_scan_id)
-    gs.RE.register_command('hxn_next_scan_id', _debug_next_scan_id)
+    if debug_mode:
+        gs.RE.register_command('hxn_next_scan_id', _debug_next_scan_id)
+    else:
+        gs.RE.register_command('hxn_next_scan_id', cmd_next_scan_id)
 
 
 def _pre_scan(total_points):
