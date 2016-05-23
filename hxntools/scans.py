@@ -108,34 +108,20 @@ def _pre_scan(total_points):
     yield Msg('hxn_scan_setup', detectors=gs.DETS, total_points=total_points)
 
 
-def _add_exposure_time_to_md(md, time):
-    if md is None:
-        md = {}
-    else:
-        md = dict(md)
-
-    if 'exposure_time' not in md:
-        md['exposure_time'] = time
-    return md
-
-
 @functools.wraps(spec_api.ct)
 def count(num=1, delay=None, time=None, *, md=None):
-    md = _add_exposure_time_to_md(md, time)
     yield from _pre_scan(total_points=num)
     yield from spec_api.ct(num=num, delay=delay, time=time, md=md)
 
 
 @functools.wraps(spec_api.ascan)
 def absolute_scan(motor, start, finish, intervals, time=None, *, md=None):
-    md = _add_exposure_time_to_md(md, time)
     yield from _pre_scan(total_points=intervals + 1)
     yield from spec_api.ascan(motor, start, finish, intervals, time, md=md)
 
 
 @functools.wraps(spec_api.dscan)
 def relative_scan(motor, start, finish, intervals, time=None, *, md=None):
-    md = _add_exposure_time_to_md(md, time)
     yield from _pre_scan(total_points=intervals + 1)
     yield from spec_api.dscan(motor, start, finish, intervals, time, md=md)
 
@@ -146,7 +132,6 @@ def absolute_fermat(x_motor, y_motor, x_start, y_start, x_range, y_range, dr,
     px, py = scan_patterns.spiral_fermat(x_range, y_range, dr, factor)
     total_points = len(px)
 
-    md = _add_exposure_time_to_md(md, time)
     yield from _pre_scan(total_points=total_points)
     yield from spec_api.afermat(x_motor, y_motor, x_start, y_start, x_range,
                                 y_range, dr, factor, time=time,
@@ -159,7 +144,6 @@ def relative_fermat(x_motor, y_motor, x_range, y_range, dr, factor, time=None,
     px, py = scan_patterns.spiral_fermat(x_range, y_range, dr, factor)
     total_points = len(px)
 
-    md = _add_exposure_time_to_md(md, time)
     yield from _pre_scan(total_points=total_points)
     yield from spec_api.fermat(x_motor, y_motor, x_range, y_range, dr, factor,
                                time=time, per_step=per_step, md=md)
@@ -171,7 +155,6 @@ def absolute_spiral(x_motor, y_motor, x_start, y_start, x_range, y_range, dr,
     px, py = scan_patterns.spiral_simple(x_range, y_range, dr, nth)
     total_points = len(px)
 
-    md = _add_exposure_time_to_md(md, time)
     yield from _pre_scan(total_points=total_points)
     yield from spec_api.aspiral(x_motor, y_motor, x_start, y_start, x_range,
                                 y_range, dr, nth, time=time,
@@ -184,7 +167,6 @@ def relative_spiral(x_motor, y_motor, x_range, y_range, dr, nth, time=None,
     px, py = scan_patterns.spiral_simple(x_range, y_range, dr, nth)
     total_points = len(px)
 
-    md = _add_exposure_time_to_md(md, time)
     yield from _pre_scan(total_points=total_points)
     yield from spec_api.spiral(x_motor, y_motor, x_range, y_range, dr, nth,
                                time=time, per_step=per_step, md=md)
@@ -201,15 +183,12 @@ def absolute_mesh(*args, time=None, md=None):
     for motor, start, stop, num in chunked(args, 4):
         total_points *= num
 
-    md = _add_exposure_time_to_md(md, time)
     yield from _pre_scan(total_points=total_points)
     yield from spec_api.mesh(*args, time=time, md=md)
 
 
 @functools.wraps(absolute_mesh)
 def relative_mesh(*args, time=None, md=None):
-    md = _add_exposure_time_to_md(md, time)
-
     plan = absolute_mesh(*args, time=time, md=md)
     plan = plans.relative_set(plan)  # re-write trajectory as relative
     yield from plans.reset_positions(plan)
