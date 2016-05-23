@@ -267,7 +267,8 @@ class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
 
         desc = OrderedDict()
         for chan in self.channels:
-            desc['{}_ch{}'.format(self.settings.name, chan)] = spec_desc
+            key = self.mds_keys[chan]
+            desc[key] = spec_desc
 
         return desc
 
