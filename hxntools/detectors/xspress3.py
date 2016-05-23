@@ -119,30 +119,8 @@ class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
         raise NotImplementedError()
 
     def collect(self):
-        # TODO
+        # TODO (hxn-specific implementation elsewhere)
         raise NotImplementedError()
-        channels = self.channels
-        timestamps = None  # TODO TAC
-        ch_uids = {ch: [str(uuid.uuid4()) for ts in timestamps]
-                   for ch in channels}
-
-        count = len(timestamps)
-        if count == 0:
-            return {}
-
-        def get_datum_args():
-            for ch in channels:
-                for seq_num in range(count):
-                    yield {'frame': seq_num,
-                           'channel': ch}
-
-        uids = [ch_uids[ch] for ch in channels]
-        bulk_insert_datum(self._filestore_res, itertools.chain(*uids),
-                          get_datum_args())
-
-        return {self.mds_keys[ch]: ch_uids[ch]
-                for ch in channels
-                }
 
     def make_filename(self):
         fn, rp, write_path = super().make_filename()
@@ -174,7 +152,6 @@ class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
     def stage(self):
         # if should external trigger
         ext_trig = self.parent.external_trig.get()
-        # TODO check self._master / self.master.get()?
 
         logger.debug('Stopping xspress3 acquisition')
         # really force it to stop acquiring
