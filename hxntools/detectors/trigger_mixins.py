@@ -28,9 +28,9 @@ class TriggerBase(BlueskyInterface):
 
 class HxnModalSettings(Device):
     mode = Cpt(Signal, value='internal',
-               doc='Triggering mode (external/external)')
+               doc='Triggering mode (internal/external)')
     scan_type = Cpt(Signal, value='step',
-                    doc='Scan type (step/scaler)')
+                    doc='Scan type (step/fly)')
     make_directories = Cpt(Signal, value=True,
                            doc='Make directories on the DAQ side')
     total_points = Cpt(Signal, value=2,
@@ -62,6 +62,7 @@ class HxnModalBase(Device):
 
     @property
     def mode(self):
+        '''Trigger mode (external/internal)'''
         return self.mode_settings.mode.get()
 
     def stage(self):
@@ -110,8 +111,7 @@ class HxnModalTrigger(HxnModalBase, TriggerBase):
 
         # In external triggering mode, the devices is only triggered once at
         # stage
-        mode = self.mode_settings.mode.get()
-        if mode == 'external' and self._external_acquire_at_stage:
+        if self.mode == 'external' and self._external_acquire_at_stage:
             self._acquisition_signal.put(1, wait=False)
         return staged
 
@@ -145,8 +145,7 @@ class HxnModalTrigger(HxnModalBase, TriggerBase):
         return self._status
 
     def trigger(self):
-        mode = self.mode_settings.mode.get()
-        mode_trigger = getattr(self, 'trigger_{}'.format(mode))
+        mode_trigger = getattr(self, 'trigger_{}'.format(self.mode))
         return mode_trigger()
 
     def _acquire_changed(self, value=None, old_value=None, **kwargs):
