@@ -287,5 +287,5 @@ class ScanInfo(object):
 
     def __iter__(self):
         if self.key:
-            for event in db.fetch_events(self.header, fill=False):
+            for event in db.get_events(self.header, fill=False):
                 yield event['data'][self.key]
