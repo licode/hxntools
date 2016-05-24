@@ -71,6 +71,14 @@ class HxnModalBase(Device):
 
         return super().stage()
 
+    def unstage(self):
+        if self.mode == 'external':
+            logger.info('[Unstage] Stopping externally-triggered detector %s',
+                        self.name)
+            self.stop()
+
+        super().unstage()
+
 
 class HxnModalTrigger(HxnModalBase, TriggerBase):
     def __init__(self, *args, image_name=None, **kwargs):
