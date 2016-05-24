@@ -1,4 +1,5 @@
 import time as ttime
+import itertools
 import logging
 
 from ophyd.device import (DeviceStatus, BlueskyInterface, Staged,
@@ -138,7 +139,9 @@ class HxnModalTrigger(HxnModalBase, TriggerBase):
         self._status = DeviceStatus(self)
         self._status._finished()
         # TODO this timestamp is inaccurate!
-        self.dispatch(self._image_name, ttime.time())
+        if self.mode_settings.scan_type.get() != 'fly':
+            # Don't dispatch images for fly-scans - they are bulk read at the end
+            self.dispatch(self._image_name, ttime.time())
         return self._status
 
     def trigger(self):
@@ -162,16 +165,21 @@ class FileStoreBulkReadable(FileStoreBulkWrite):
         return make_filename_add_subdirectory(fn, read_path, write_path,
                                               make_directories=make_dirs)
 
+    def _reset_data(self):
+        self._datum_uids.clear()
+        self._datum_kwargs_map.clear()
+        self._point_counter = itertools.count()
+
     def bulk_read(self, timestamps):
         image_name = self.image_name
+
         uids = [self.generate_datum(self.image_name, ts) for ts in timestamps]
         datum_args = [self._datum_kwargs_map[uid] for uid in uids]
 
         bulk_insert_datum(self._resource, uids, datum_args)
 
         # clear so unstage will not save the images twice:
-        self._datum_uids.clear()
-        self._datum_kwargs_map.clear()
+        self._reset_data()
         return {image_name: uids}
 
     @property

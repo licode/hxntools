@@ -60,6 +60,5 @@ def make_filename_add_subdirectory(fn, read_path, write_path, *,
     write_path = os.path.join(write_path, hash_portion, '')
 
     if make_directories:
-        print('making directories', read_path)
         makedirs(read_path)
     return fn, read_path, write_path
