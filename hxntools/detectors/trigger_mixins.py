@@ -52,12 +52,12 @@ class HxnModalBase(Device):
                 mode_setup_method()
 
     def mode_internal(self):
-        logger.info('%s internal triggering %s', self.name,
-                    self.mode_settings.get())
+        logger.debug('%s internal triggering %s', self.name,
+                     self.mode_settings.get())
 
     def mode_external(self):
-        logger.info('%s external triggering %s', self.name,
-                    self.mode_settings.get())
+        logger.debug('%s external triggering %s', self.name,
+                     self.mode_settings.get())
 
     @property
     def mode(self):
