@@ -6,14 +6,10 @@ from boltons.iterutils import chunked
 
 from bluesky import (plans, spec_api, Msg)
 from bluesky.global_state import get_gs
+from bluesky import plan_patterns
 
 from ophyd import (Device, Component as Cpt, EpicsSignal)
 from .detectors.trigger_mixins import HxnModalBase
-
-# TODO: still need these scan patterns to determine the number
-#       of points for spiral scans (without counting bluesky
-#       messages...)
-from . import scan_patterns
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +40,7 @@ def get_next_scan_id():
 def cmd_scan_setup(msg):
     detectors = msg.kwargs['detectors']
     total_points = msg.kwargs['total_points']
+    count_time = msg.kwargs['count_time']
 
     modal_dets = [det for det in detectors
                   if isinstance(det, HxnModalBase)]
@@ -52,6 +49,9 @@ def cmd_scan_setup(msg):
     for det in modal_dets:
         logger.debug('[internal trigger] Setting up detector %s', det.name)
         settings = det.mode_settings
+
+        # Ensure count time is set prior to mode setup
+        det.count_time.put(count_time)
 
         # start by using internal triggering
         settings.mode.put(mode)
@@ -102,37 +102,40 @@ def setup(*, debug_mode=False):
         gs.RE.register_command('hxn_next_scan_id', cmd_next_scan_id)
 
 
-def _pre_scan(total_points):
+def _pre_scan(total_points, count_time):
     gs = get_gs()
     yield Msg('hxn_next_scan_id')
-    yield Msg('hxn_scan_setup', detectors=gs.DETS, total_points=total_points)
+    yield Msg('hxn_scan_setup', detectors=gs.DETS, total_points=total_points,
+              count_time=count_time)
 
 
 @functools.wraps(spec_api.ct)
 def count(num=1, delay=None, time=None, *, md=None):
-    yield from _pre_scan(total_points=num)
+    yield from _pre_scan(total_points=num, count_time=time)
     yield from spec_api.ct(num=num, delay=delay, time=time, md=md)
 
 
 @functools.wraps(spec_api.ascan)
 def absolute_scan(motor, start, finish, intervals, time=None, *, md=None):
-    yield from _pre_scan(total_points=intervals + 1)
+    yield from _pre_scan(total_points=intervals + 1, count_time=time)
     yield from spec_api.ascan(motor, start, finish, intervals, time, md=md)
 
 
 @functools.wraps(spec_api.dscan)
 def relative_scan(motor, start, finish, intervals, time=None, *, md=None):
-    yield from _pre_scan(total_points=intervals + 1)
+    yield from _pre_scan(total_points=intervals + 1, count_time=time)
     yield from spec_api.dscan(motor, start, finish, intervals, time, md=md)
 
 
 @functools.wraps(spec_api.afermat)
 def absolute_fermat(x_motor, y_motor, x_start, y_start, x_range, y_range, dr,
-                    factor, time=None, *, per_step=None, md=None):
-    px, py = scan_patterns.spiral_fermat(x_range, y_range, dr, factor)
-    total_points = len(px)
+                    factor, time=None, *, per_step=None, md=None, tilt=0.0):
+    cyc = plan_patterns.spiral_fermat(x_motor, y_motor, x_motor.position,
+                                      y_motor.position, x_range, y_range, dr,
+                                      factor, tilt=tilt)
+    total_points = len(cyc)
 
-    yield from _pre_scan(total_points=total_points)
+    yield from _pre_scan(total_points=total_points, count_time=time)
     yield from spec_api.afermat(x_motor, y_motor, x_start, y_start, x_range,
                                 y_range, dr, factor, time=time,
                                 per_step=per_step, md=md)
@@ -140,22 +143,26 @@ def absolute_fermat(x_motor, y_motor, x_start, y_start, x_range, y_range, dr,
 
 @functools.wraps(spec_api.fermat)
 def relative_fermat(x_motor, y_motor, x_range, y_range, dr, factor, time=None,
-                    *, per_step=None, md=None):
-    px, py = scan_patterns.spiral_fermat(x_range, y_range, dr, factor)
-    total_points = len(px)
+                    *, per_step=None, md=None, tilt=0.0):
+    cyc = plan_patterns.spiral_fermat(x_motor, y_motor, x_motor.position,
+                                      y_motor.position, x_range, y_range, dr,
+                                      factor, tilt=tilt)
+    total_points = len(cyc)
 
-    yield from _pre_scan(total_points=total_points)
+    yield from _pre_scan(total_points=total_points, count_time=time)
     yield from spec_api.fermat(x_motor, y_motor, x_range, y_range, dr, factor,
                                time=time, per_step=per_step, md=md)
 
 
 @functools.wraps(spec_api.aspiral)
 def absolute_spiral(x_motor, y_motor, x_start, y_start, x_range, y_range, dr,
-                    nth, time=None, *, per_step=None, md=None):
-    px, py = scan_patterns.spiral_simple(x_range, y_range, dr, nth)
-    total_points = len(px)
+                    nth, time=None, *, per_step=None, md=None, tilt=0.0):
+    cyc = plan_patterns.spiral_simple(x_motor, y_motor, x_motor.position,
+                                      y_motor.position, x_range, y_range, dr,
+                                      nth, tilt=tilt)
+    total_points = len(cyc)
 
-    yield from _pre_scan(total_points=total_points)
+    yield from _pre_scan(total_points=total_points, count_time=time)
     yield from spec_api.aspiral(x_motor, y_motor, x_start, y_start, x_range,
                                 y_range, dr, nth, time=time,
                                 per_step=per_step, md=md)
@@ -163,11 +170,13 @@ def absolute_spiral(x_motor, y_motor, x_start, y_start, x_range, y_range, dr,
 
 @functools.wraps(spec_api.spiral)
 def relative_spiral(x_motor, y_motor, x_range, y_range, dr, nth, time=None,
-                    *, per_step=None, md=None):
-    px, py = scan_patterns.spiral_simple(x_range, y_range, dr, nth)
-    total_points = len(px)
+                    *, per_step=None, md=None, tilt=0.0):
+    cyc = plan_patterns.spiral_simple(x_motor, y_motor, x_motor.position,
+                                      y_motor.position, x_range, y_range, dr,
+                                      nth, tilt=tilt)
+    total_points = len(cyc)
 
-    yield from _pre_scan(total_points=total_points)
+    yield from _pre_scan(total_points=total_points, count_time=time)
     yield from spec_api.spiral(x_motor, y_motor, x_range, y_range, dr, nth,
                                time=time, per_step=per_step, md=md)
 
@@ -183,7 +192,7 @@ def absolute_mesh(*args, time=None, md=None):
     for motor, start, stop, num in chunked(args, 4):
         total_points *= num
 
-    yield from _pre_scan(total_points=total_points)
+    yield from _pre_scan(total_points=total_points, count_time=time)
     yield from spec_api.mesh(*args, time=time, md=md)
 
 
