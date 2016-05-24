@@ -3,11 +3,17 @@
 from collections import OrderedDict
 import uuid
 import itertools
+import logging
 
 from ophyd import (Component as Cpt, Signal)
+from ophyd.utils import set_and_wait
+
 from filestore.api import bulk_insert_datum
 from .xspress3 import (XspressTrigger, Xspress3Detector, Xspress3FileStore,
                        )
+
+
+logger = logging.getLogger(__name__)
 
 
 class HxnXspress3DetectorBase(XspressTrigger, Xspress3Detector):
@@ -61,3 +67,12 @@ class HxnXspress3DetectorBase(XspressTrigger, Xspress3Detector):
         hdf5 = self.hdf5._fn
         for name, roi_data in self.read_hdf5(hdf5):
             yield (name, roi_data)
+
+    def stop(self):
+        super().stop()
+
+        logger.info('Ensuring detector %r capture stopped...',
+                    self.name)
+        set_and_wait(self.settings.acquire, 0)
+        set_and_wait(self.hdf5.capture, 0)
+        logger.info('... detector %r ok', self.name)
