@@ -4,19 +4,104 @@ from collections import OrderedDict
 import uuid
 import itertools
 import logging
+import time
 
 from ophyd import (Component as Cpt, Signal)
+from ophyd.status import DeviceStatus
+from ophyd.device import (BlueskyInterface, Staged)
 from ophyd.utils import set_and_wait
 
 from filestore.api import bulk_insert_datum
-from .xspress3 import (XspressTrigger, Xspress3Detector, Xspress3FileStore,
-                       )
+from .xspress3 import (XspressTrigger, Xspress3Detector, Xspress3FileStore)
+from .trigger_mixins import HxnModalBase
 
 
 logger = logging.getLogger(__name__)
 
 
-class HxnXspress3DetectorBase(XspressTrigger, Xspress3Detector):
+class HxnXspressTrigger(HxnModalBase, BlueskyInterface):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._status = None
+        self._acquisition_signal = self.settings.acquire
+        self._abs_trigger_count = 0
+
+    def unstage(self):
+        ret = super().unstage()
+        try:
+            self._acquisition_signal.clear_sub(self._acquire_changed)
+        except KeyError:
+            pass
+
+        return ret
+
+    def _acquire_changed(self, value=None, old_value=None, **kwargs):
+        "This is called when the 'acquire' signal changes."
+        if self._status is None:
+            return
+        if (old_value == 1) and (value == 0):
+            # Negative-going edge means an acquisition just finished.
+            self._status._finished()
+
+    def mode_internal(self):
+        self._abs_trigger_count = 0
+        self.stage_sigs[self.external_trig] = False
+        self.stage_sigs[self.settings.acquire_time] = self.count_time.get()
+        self._acquisition_signal.subscribe(self._acquire_changed)
+
+    def mode_external(self):
+        ms = self.mode_settings
+        # NOTE: these are used in Xspress3Filestore.stage
+        self.stage_sigs[self.external_trig] = True
+        self.stage_sigs[self.total_points] = ms.total_points.get()
+        self.stage_sigs[self.spectra_per_point] = 1
+        self.stage_sigs[self.settings.acquire_time] = 0.001
+
+        # NOTE: these are taken care of in Xspress3Filestore
+        # self.stage_sigs[self.settings.trigger_mode] = 'TTL Veto Only'
+        # self.stage_sigs[self.settings.num_images] = total_capture
+
+    def _dispatch_channels(self, trigger_time):
+        self._abs_trigger_count += 1
+        channels = self._channels.values()
+        for sn in self.read_attrs:
+            ch = getattr(self, sn)
+            if ch in channels:
+                self.dispatch(ch.name, trigger_time)
+
+    def trigger_internal(self):
+        if self._staged != Staged.yes:
+            raise RuntimeError("not staged")
+        self._status = DeviceStatus(self)
+        self.settings.erase.put(1)
+        self._acquisition_signal.put(1, wait=False)
+        self._dispatch_channels(trigger_time=time.time())
+        return self._status
+
+    def trigger_external(self):
+        if self._staged != Staged.yes:
+            raise RuntimeError("not staged")
+
+        self._status = DeviceStatus(self)
+        self._status._finished()
+        if self.mode_settings.scan_type.get() != 'fly':
+            self._dispatch_channels(trigger_time=time.time())
+            # fly-scans take care of dispatching on their own
+
+        return self._status
+
+    def stage(self):
+        staged = super().stage()
+        mode = self.mode_settings.mode.get()
+        if mode == 'external':
+            # In external triggering mode, the devices is only triggered once
+            # at stage
+            self.settings.erase.put(1, wait=True)
+            self._acquisition_signal.put(1, wait=False)
+        return staged
+
+
+class HxnXspress3DetectorBase(HxnXspressTrigger, Xspress3Detector):
     flyer_timestamps = Cpt(Signal)
 
     @property
@@ -74,5 +159,5 @@ class HxnXspress3DetectorBase(XspressTrigger, Xspress3Detector):
         logger.info('Ensuring detector %r capture stopped...',
                     self.name)
         set_and_wait(self.settings.acquire, 0)
-        set_and_wait(self.hdf5.capture, 0)
+        self.hdf5.stop()
         logger.info('... detector %r ok', self.name)
