@@ -1,7 +1,8 @@
+import logging
 import collections
 import numpy as np
+
 from databroker import DataBroker as db
-import logging
 
 
 logger = logging.getLogger(__name__)
@@ -34,11 +35,8 @@ scan_types = dict(
                     'relative_spiral', 'absolute_spiral'),
             fly=('FlyPlan1D', 'FlyPlan2D'),
             ),
-    v1=dict(step_1d=('relative_scan', 'absolute_scan', 'count'),
-            step_2d=('relative_mesh', 'absolute_mesh'),
-            spiral=('spiral_fermat', 'relative_spiral_fermat',
-                    'spiral', 'relative_spiral', ),
-            fly=('FlyPlan1D', 'FlyPlan2D'),
+    v1=dict(fly=('FlyPlan1D', 'FlyPlan2D'),
+            # everything else can be done with plan_patterns
             ),
 )
 
@@ -185,23 +183,17 @@ def _get_scan_info_bs_v1(header):
     info = {'num': 0,
             'dimensions': [],
             'motors': [],
-            'range': [],
+            'range': {},
             'pyramid': False,
             }
 
-    plan_args = start_doc['plan_args']
     plan_type = start_doc['plan_type']
     plan_name = start_doc['plan_name']
 
-    motors = None
     range_ = None
     pyramid = False
-    dimensions = []
 
     plan_type_info = scan_types['v1']
-    step_1d = plan_type_info['step_1d']
-    step_2d = plan_type_info['step_2d']
-    spiral_scans = plan_type_info['spiral']
     fly_scans = plan_type_info['fly']
 
     motors = start_doc['motors']
@@ -209,41 +201,51 @@ def _get_scan_info_bs_v1(header):
     if plan_type in fly_scans:
         logger.debug('Scan %s (%s) is a fly scan (%s %s)', start_doc.scan_id,
                      start_doc.uid, plan_type, plan_name)
-        dimensions = start_doc['dimensions']
+        shape = start_doc['shape']
         pyramid = start_doc['fly_type'] == 'pyramid'
-        range_ = start_doc['scan_range']
-    elif plan_name in step_2d:
-        logger.debug('Scan %s (%s) is an ND scan (%s %s)', start_doc.scan_id,
-                     start_doc.uid, plan_type, plan_name)
-
-        args = plan_args['args']
-        range0 = args[1::5]
-        range1 = args[2::5]
-        range_ = list(zip(range0, range1))
-        dimensions = args[3::5]
-    elif plan_name in spiral_scans:
-        # TODO insert 'num' in
-        dimensions = [int(start_doc['num_step'])]
-        logger.debug('Scan %s (%s) is a spiral scan (%s %s) %d points',
-                     start_doc.scan_id, start_doc.uid, plan_type,
-                     plan_name, dimensions[0])
-        range_ = [plan_args['x_range'], plan_args['y_range']]
-    elif plan_name in step_1d or 'num' in start_doc:
-        logger.debug('Scan %s (%s) is a 1D scan (%s %s)', start_doc.scan_id,
-                     start_doc.uid, plan_type, plan_name)
-        try:
-            dimensions = [int(start_doc['num'])]
-        except KeyError:
-            # TODO
-            dimensions = [1]
+        range_ = dict(zip(motors, start_doc['scan_range']))
     else:
-        msg = ('Unrecognized plan type/name (uid={} name={} type={})'
-               ''.format(start_doc.uid, plan_name, plan_type))
-        raise RuntimeError(msg)
+        try:
+            pattern_module = start_doc['plan_pattern_module']
+            pattern = start_doc['plan_pattern']
+            pattern_args = start_doc['plan_pattern_args']
+        except KeyError as ex:
+            msg = ('Unrecognized plan type/name (uid={} name={} type={}; '
+                   'missing key: {!r})'.format(start_doc.uid, plan_name,
+                                               plan_type, ex))
+            raise RuntimeError(msg)
 
-    num = np.product(dimensions)
-    info['num'] = num
-    info['dimensions'] = dimensions
+        module = __import__(pattern_module, fromlist=[''])
+        pattern_fcn = getattr(module, pattern)
+        logger.debug('Calling plan pattern function: %s with kwargs %s',
+                     pattern_fcn, pattern_args)
+        points = pattern_fcn(**pattern_args)
+
+        if isinstance(points, (list, np.ndarray)):
+            num = len(points)
+            range_ = {motors[0]: (np.min(points), np.max(points))}
+        else:
+            cyc = points
+            num = len(cyc)
+            try:
+                # cycler >= 0.10
+                positions = cyc.by_key()
+            except AttributeError:
+                positions = collections.defaultdict(lambda: [])
+                for pt in iter(cyc):
+                    for mtr, pos in pt.items():
+                        positions[mtr].append(pos)
+
+            range_ = {_eval(mtr).name: (np.min(positions[mtr]),
+                                        np.max(positions[mtr]))
+                      for mtr in cyc.keys}
+
+        shape = start_doc.get('shape', None)
+        if shape is None:
+            shape = [num]
+
+    info['num'] = np.product(shape)
+    info['dimensions'] = shape
     info['motors'] = motors
     info['range'] = range_
     info['pyramid'] = pyramid
@@ -287,5 +289,6 @@ class ScanInfo(object):
 
     def __iter__(self):
         if self.key:
-            for event in db.get_events(self.header, fill=False):
+            for event in db.get_events(self.header, fill=False,
+                                       name='primary'):
                 yield event['data'][self.key]
