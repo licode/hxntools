@@ -337,7 +337,8 @@ def combine_tables_on_time(header, names, *, method='ffill', **kwargs):
 
 
 @functools.wraps(_get_table)
-def get_table(headers, name='primary', combine_table_names=None, **kwargs):
+def get_combined_table(headers, name='primary', combine_table_names=None,
+                       **kwargs):
     # Functions the same as get_table, but also combines ('primary' and
     # 'motor2') when necessary (or whatever is in combine_table_names)
 
