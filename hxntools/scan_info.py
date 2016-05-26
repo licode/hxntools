@@ -1,8 +1,10 @@
 import logging
 import collections
+import functools
 import numpy as np
+import pandas as pd
 
-from databroker import DataBroker as db
+from databroker import (DataBroker as db, get_table as _get_table)
 
 
 logger = logging.getLogger(__name__)
@@ -292,3 +294,74 @@ class ScanInfo(object):
             for event in db.get_events(self.header, fill=False,
                                        name='primary'):
                 yield event['data'][self.key]
+
+
+def combine_tables_on_time(header, names, *, method='ffill', **kwargs):
+    '''Combine a fast-changing dataframe from databroker with one (or more)
+    slow-changing ones, given its header.
+
+    Parameters
+    ----------
+    header : Header
+    names : list
+        List of broker event stream names. The first will be taken as the
+        primary (and in fact should probably be 'primary')
+    method : {'ffill', 'bfill', 'nearest'}, optional
+        Reindexing method
+    **kwargs : dict, optional
+        Passed to metadatastore.get_table
+
+    Returns
+    -------
+    df : pd.DataFrame
+    '''
+    dfs = [_get_table(header, name=name, **kwargs)
+           for name in names]
+
+    primary_df = dfs[0]
+    primary_index = primary_df.index
+
+    try:
+        times = primary_df['time']
+    except KeyError:
+        return dfs[0]
+
+    dfs = ([primary_df] +
+           [other.set_index('time').reindex(times, method=method)
+            for other in dfs[1:]
+            if 'time' in other])
+
+    for df in dfs[1:]:
+        df.index = primary_index
+    return pd.concat(dfs, axis=1)
+
+
+@functools.wraps(_get_table)
+def get_table(headers, name='primary', combine_table_names=None, **kwargs):
+    # Functions the same as get_table, but also combines ('primary' and
+    # 'motor2') when necessary (or whatever is in combine_table_names)
+
+    if combine_table_names is None:
+        if name == 'primary':
+            combine_table_names = ['primary', 'motor2']
+        else:
+            combine_table_names = []
+
+    if not combine_table_names:
+        return _get_table(headers, name=name, **kwargs)
+
+    try:
+        headers.items()
+    except AttributeError:
+        pass
+    else:
+        headers = [headers]
+
+    dfs = [combine_tables_on_time(header, names=combine_table_names, **kwargs)
+           for header in headers]
+
+    if dfs:
+        return pd.concat(dfs)
+    else:
+        # edge case: no data
+        return pd.DataFrame()
