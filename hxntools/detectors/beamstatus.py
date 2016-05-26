@@ -1,39 +1,107 @@
 from __future__ import print_function
 import logging
 
-from ophyd.controls.ophydobj import OphydObject
-from ophyd.controls import EpicsSignal
-from ophyd.controls.detector import (Detector, DetectorStatus)
-
+from ophyd import (EpicsSignalRO, DeviceStatus)
+from ophyd import (Device, Component as Cpt)
 
 logger = logging.getLogger(__name__)
-sr_shutter_status = EpicsSignal('SR-EPS{PLC:1}Sts:MstrSh-Sts', rw=False,
-                                name='sr_shutter_status')
-sr_beam_current = EpicsSignal('SR:C03-BI{DCCT:1}I:Real-I', rw=False,
-                              name='sr_beam_current')
 
 
-class BeamStatusDetector(OphydObject, Detector):
-    def __init__(self, *args, **kwargs):
-        self._shutter_status = kwargs.pop('shutter_status', sr_shutter_status)
-        self._beam_current = kwargs.pop('beam_current', sr_beam_current)
-        self._min_current = kwargs.pop('min_current', 100.0)
+class BeamStatusDetector(Device):
+    shutter_status = Cpt(EpicsSignalRO, 'SR-EPS{PLC:1}Sts:MstrSh-Sts')
+    beam_current = Cpt(EpicsSignalRO, 'SR:C03-BI{DCCT:1}I:Real-I')
+    enabled = Cpt(EpicsSignalRO, 'SR:C03-EPS{PLC:1}Sts:ID_BE_Enbl-Sts')
 
-        OphydObject.__init__(self, *args, **kwargs)
+    def __init__(self, prefix='', *, min_current=100.0, read_attrs=None,
+                 configuration_attrs=None,
+                 **kwargs):
+        self._min_current = min_current
 
-        self._shutter_ok = False
-        self._current_ok = False
+        if configuration_attrs is None:
+            configuration_attrs = ['shutter_status', 'enabled', 'beam_current']
+        if read_attrs is None:
+            read_attrs = ['beam_current']
+
+        super().__init__(prefix, configuration_attrs=configuration_attrs,
+                         read_attrs=read_attrs, **kwargs)
+
+        self._shutter_ok = None
+        self._current_ok = None
+        self._enabled_ok = None
         self._last_status = None
         self._statuses = []
 
-        self._shutter_status.subscribe(self._shutter_changed)
-        self._beam_current.subscribe(self._current_changed)
+        self.shutter_status.subscribe(self._shutter_changed)
+        self.beam_current.subscribe(self._current_changed)
+        self.enabled.subscribe(self._enabled_changed)
 
-    def acquire(self):
-        status = DetectorStatus(self)
+    @property
+    def min_current(self):
+        '''The minimum current required to be considered usable'''
+        return self._min_current
+
+    @min_current.setter
+    def min_current(self, value):
+        '''The minimum current required to be considered usable'''
+        self._min_current = value
+        self._current_changed(value=self.sr_beam_current.get())
+
+    def _shutter_changed(self, value=None, **kwargs):
+        self._shutter_ok = (value == 1)
+        self._check_status()
+
+    def _current_changed(self, value=None, **kwargs):
+        self._current_ok = (value > self._min_current)
+        self._check_status()
+
+    def _enabled_changed(self, value=None, **kwargs):
+        self._enabled_ok = (value == 1)
+        self._check_status()
+
+    @property
+    def status(self):
+        return self._shutter_ok and self._current_ok and self._enabled_ok
+
+    def _check_status(self):
+        if None in (self._shutter_ok, self._current_ok, self._enabled_ok):
+            return
+
+        status = self.status
+
+        if status:
+            self._done()
+
+        if status != self._last_status:
+            logger.warning('Beam status changed:')
+
+            if self._enabled_ok:
+                logger.warning('Beamline is enabled')
+            else:
+                logger.warning('Beamline is NOT enabled')
+
+            if self._shutter_ok:
+                logger.warning('Shutters are open')
+            else:
+                logger.warning('Shutters are closed')
+
+            if self._current_ok:
+                logger.warning('Current meets threshold of %f',
+                               self.min_current)
+            else:
+                logger.warning('Current does not meet threshold of %f',
+                               self.min_current)
+
+        self._last_status = status
+
+    def _done(self):
+        for status in self._statuses:
+            status._finished()
+
+    def trigger(self):
+        status = DeviceStatus(self)
 
         if self.status:
-            status.done = True
+            status._finished()
         else:
             self._statuses.append(status)
 
@@ -44,48 +112,6 @@ class BeamStatusDetector(OphydObject, Detector):
 
         return status
 
-    def _shutter_changed(self, value=None, **kwargs):
-        self._shutter_ok = (value == 1)
-        self._check_status()
-
-    def _current_changed(self, value=None, **kwargs):
-        self._current_ok = (value > self._min_current)
-        self._check_status()
-
-    def _done(self):
-        for status in self._statuses:
-            status.done = True
-
-    @property
-    def status(self):
-        return self._shutter_ok and self._current_ok
-
-    def _check_status(self):
-        status = self.status
-
-        if status:
-            self._done()
-
-        if status != self._last_status:
-            logger.warning('Beam status changed:')
-
-            if self._shutter_ok:
-                logger.warning('Shutters are open')
-            else:
-                logger.warning('Shutters are closed')
-
-            if self._current_ok:
-                logger.warning('Current meets threshold of %f' %
-                               self._min_current)
-            else:
-                logger.warning('Current does not meet threshold of %f' %
-                               self._min_current)
-
-        self._last_status = status
-
     def read(self):
         del self._statuses[:]
-        return self._beam_current.read()
-
-    def describe(self):
-        return self._beam_current.describe()
+        return super().read()

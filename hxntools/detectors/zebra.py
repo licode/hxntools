@@ -1,310 +1,399 @@
-from __future__ import print_function
+from enum import IntEnum
 import logging
-import time
 
-from ophyd.controls.areadetector.detectors import (ADBase, ADSignal)
-from ophyd.controls import EpicsSignal
-from ophyd.controls.ophydobj import DetectorStatus
+from ophyd import (Device, Component as Cpt, FormattedComponent as FC,
+                   Signal)
+from ophyd import (EpicsSignal, EpicsSignalRO, DeviceStatus)
+from ophyd.utils import set_and_wait
+
+from .trigger_mixins import HxnModalBase
 
 logger = logging.getLogger(__name__)
 
 
-class ZebraPulse(ADBase):
-    _html_docs = ['']
-
-    width = ADSignal('WID')
-    input_ = ADSignal('INP')
-    input_str = ADSignal('INP:STR', rw=False, string=True)
-    input_status = ADSignal('INP:STA', rw=False)
-    delay = ADSignal('DLY')
-    time_units = ADSignal('PRE', string=True)
-    output = ADSignal('OUT')
-
-    def __init__(self, prefix, zebra, index, **kwargs):
-        super(ZebraPulse, self).__init__(prefix, **kwargs)
-
-        self._zebra = zebra
-        self._index = index
-
-        input_edge = {1: '{}POLARITY:BC',
-                      2: '{}POLARITY:BD',
-                      3: '{}POLARITY:BE',
-                      4: '{}POLARITY:BF',
-                      }
-
-        self.input_edge = EpicsSignal(input_edge[index].format(zebra._prefix),
-                                      alias='input_edge')
+def _get_configuration_attrs(cls, *, signal_class=Signal):
+    return [sig_name for sig_name in cls.signal_names
+            if issubclass(getattr(cls, sig_name).cls, signal_class)]
 
 
-class ZebraFrontOutput(ADBase):
-    _html_docs = ['']
+class ZebraAddresses(IntEnum):
+    DISCONNECT = 0
+    IN1_TTL = 1
+    IN1_NIM = 2
+    IN1_LVDS = 3
+    IN2_TTL = 4
+    IN2_NIM = 5
+    IN2_LVDS = 6
+    IN3_TTL = 7
+    IN3_OC = 8
+    IN3_LVDS = 9
+    IN4_TTL = 10
+    IN4_CMP = 11
+    IN4_PECL = 12
+    IN5_ENCA = 13
+    IN5_ENCB = 14
+    IN5_ENCZ = 15
+    IN5_CONN = 16
+    IN6_ENCA = 17
+    IN6_ENCB = 18
+    IN6_ENCZ = 19
+    IN6_CONN = 20
+    IN7_ENCA = 21
+    IN7_ENCB = 22
+    IN7_ENCZ = 23
+    IN7_CONN = 24
+    IN8_ENCA = 25
+    IN8_ENCB = 26
+    IN8_ENCZ = 27
+    IN8_CONN = 28
+    PC_ARM = 29
+    PC_GATE = 30
+    PC_PULSE = 31
+    AND1 = 32
+    AND2 = 33
+    AND3 = 34
+    AND4 = 35
+    OR1 = 36
+    OR2 = 37
+    OR3 = 38
+    OR4 = 39
+    GATE1 = 40
+    GATE2 = 41
+    GATE3 = 42
+    GATE4 = 43
+    DIV1_OUTD = 44
+    DIV2_OUTD = 45
+    DIV3_OUTD = 46
+    DIV4_OUTD = 47
+    DIV1_OUTN = 48
+    DIV2_OUTN = 49
+    DIV3_OUTN = 50
+    DIV4_OUTN = 51
+    PULSE1 = 52
+    PULSE2 = 53
+    PULSE3 = 54
+    PULSE4 = 55
+    QUAD_OUTA = 56
+    QUAD_OUTB = 57
+    CLOCK_1KHZ = 58
+    CLOCK_1MHZ = 59
+    SOFT_IN1 = 60
+    SOFT_IN2 = 61
+    SOFT_IN3 = 62
+    SOFT_IN4 = 63
 
-    ttl = ADSignal('TTL')
-    nim = ADSignal('NIM')
-    lvds = ADSignal('LVDS')
-    open_collector = ADSignal('OC')
-    pecl = ADSignal('PECL')
+
+class EpicsSignalWithRBV(EpicsSignal):
+    # An EPICS signal that uses the Zebra convention of 'pvname' being the
+    # setpoint and 'pvname:RBV' being the read-back
+
+    def __init__(self, prefix, **kwargs):
+        super().__init__(prefix + ':RBV', write_pv=prefix, **kwargs)
 
 
-class ZebraRearOutput(ADBase):
-    _html_docs = ['']
+class ZebraPulse(Device):
+    width = Cpt(EpicsSignalWithRBV, 'WID')
+    input_addr = Cpt(EpicsSignalWithRBV, 'INP')
+    input_str = Cpt(EpicsSignalRO, 'INP:STR', string=True)
+    input_status = Cpt(EpicsSignalRO, 'INP:STA')
+    delay = Cpt(EpicsSignalWithRBV, 'DLY')
+    delay_sync = Cpt(EpicsSignal, 'DLY:SYNC')
+    time_units = Cpt(EpicsSignalWithRBV, 'PRE', string=True)
+    output = Cpt(EpicsSignal, 'OUT')
 
-    enca = ADSignal('ENCA')
-    encb = ADSignal('ENCB')
-    encz = ADSignal('ENCZ')
-    conn = ADSignal('CONN')
+    input_edge = FC(EpicsSignal,
+                    '{self._zebra_prefix}POLARITY:{self._edge_addr}')
+
+    _edge_addrs = {1: 'BC',
+                   2: 'BD',
+                   3: 'BE',
+                   4: 'BF',
+                   }
+
+    def __init__(self, prefix, *, index=None, parent=None,
+                 configuration_attrs=None, read_attrs=None, **kwargs):
+        if read_attrs is None:
+            read_attrs = []
+        if configuration_attrs is None:
+            configuration_attrs = _get_configuration_attrs(self.__class__)
+
+        zebra = parent
+        self.index = index
+        self._zebra_prefix = zebra.prefix
+        self._edge_addr = self._edge_addrs[index]
+
+        super().__init__(prefix, configuration_attrs=configuration_attrs,
+                         read_attrs=read_attrs, parent=parent, **kwargs)
 
 
-class ZebraGate(ADBase):
-    _html_docs = ['']
+class ZebraOutputBase(Device):
+    '''The base of all zebra outputs (1~8)
 
-    input1 = ADSignal('INP1')
-    input1_string = ADSignal('INP1:STR', string=True, rw=False)
-    input1_status = ADSignal('INP1:STA', string=True, rw=False)
+        Front outputs
+        # TTL  LVDS  NIM  PECL  OC  ENC
+        1  o    o     o
+        2  o    o     o
+        3  o    o               o
+        4  o          o    o
 
-    input2 = ADSignal('INP2')
-    input2_string = ADSignal('INP2:STR', string=True, rw=False)
-    input2_status = ADSignal('INP2:STA', string=True, rw=False)
+        Rear outputs
+        # TTL  LVDS  NIM  PECL  OC  ENC
+        5                            o
+        6                            o
+        7                            o
+        8                            o
 
-    output = ADSignal('OUT')
+    '''
+    def __init__(self, prefix, *, index=None, read_attrs=None,
+                 configuration_attrs=None, **kwargs):
+        self.index = index
 
-    def __init__(self, prefix, zebra, index, **kwargs):
-        super(ZebraGate, self).__init__(prefix, **kwargs)
+        if read_attrs is None:
+            read_attrs = []
+        if configuration_attrs is None:
+            configuration_attrs = _get_configuration_attrs(self.__class__)
 
-        # TODO not adsignals, so can't use setter
-        # NOTE prefix is using zebra's prefix not gate's
-        inp1_b = '{}POLARITY:B{}'.format(zebra._prefix, index - 1)
-        self.input1_edge = EpicsSignal(inp1_b, alias='input1_edge')
-
-        inp2_b = '{}POLARITY:B{}'.format(zebra._prefix, 4 + index - 1)
-        self.input2_edge = EpicsSignal(inp2_b, alias='input2_edge')
+        super().__init__(prefix, read_attrs=read_attrs,
+                         configuration_attrs=configuration_attrs, **kwargs)
 
 
-class Zebra(ADBase):
-    _html_docs = ['']
+class ZebraOutputType(Device):
+    '''Shared by all output types (ttl, lvds, nim, pecl, out)'''
+    addr = Cpt(EpicsSignalWithRBV, '')
+    status = Cpt(EpicsSignalRO, ':STA')
+    string = Cpt(EpicsSignalRO, ':STR', string=True)
+    sync = Cpt(EpicsSignal, ':SYNC')
+    write_output = Cpt(EpicsSignal, ':SET')
 
-    addresses = {0: 'DISCONNECT',
-                 1: 'IN1_TTL',
-                 2: 'IN1_NIM',
-                 3: 'IN1_LVDS',
-                 4: 'IN2_TTL',
-                 5: 'IN2_NIM',
-                 6: 'IN2_LVDS',
-                 7: 'IN3_TTL',
-                 8: 'IN3_OC',
-                 9: 'IN3_LVDS',
-                 10: 'IN4_TTL',
-                 11: 'IN4_CMP',
-                 12: 'IN4_PECL',
-                 13: 'IN5_ENCA',
-                 14: 'IN5_ENCB',
-                 15: 'IN5_ENCZ',
-                 16: 'IN5_CONN',
-                 17: 'IN6_ENCA',
-                 18: 'IN6_ENCB',
-                 19: 'IN6_ENCZ',
-                 20: 'IN6_CONN',
-                 21: 'IN7_ENCA',
-                 22: 'IN7_ENCB',
-                 23: 'IN7_ENCZ',
-                 24: 'IN7_CONN',
-                 25: 'IN8_ENCA',
-                 26: 'IN8_ENCB',
-                 27: 'IN8_ENCZ',
-                 28: 'IN8_CONN',
-                 29: 'PC_ARM',
-                 30: 'PC_GATE',
-                 31: 'PC_PULSE',
-                 32: 'AND1',
-                 33: 'AND2',
-                 34: 'AND3',
-                 35: 'AND4',
-                 36: 'OR1',
-                 37: 'OR2',
-                 38: 'OR3',
-                 39: 'OR4',
-                 40: 'GATE1',
-                 41: 'GATE2',
-                 42: 'GATE3',
-                 43: 'GATE4',
-                 44: 'DIV1_OUTD',
-                 45: 'DIV2_OUTD',
-                 46: 'DIV3_OUTD',
-                 47: 'DIV4_OUTD',
-                 48: 'DIV1_OUTN',
-                 49: 'DIV2_OUTN',
-                 50: 'DIV3_OUTN',
-                 51: 'DIV4_OUTN',
-                 52: 'PULSE1',
-                 53: 'PULSE2',
-                 54: 'PULSE3',
-                 55: 'PULSE4',
-                 56: 'QUAD_OUTA',
-                 57: 'QUAD_OUTB',
-                 58: 'CLOCK_1KHZ',
-                 59: 'CLOCK_1MHZ',
-                 60: 'SOFT_IN1',
-                 61: 'SOFT_IN2',
-                 62: 'SOFT_IN3',
-                 63: 'SOFT_IN4',
-                 }
+    def __init__(self, prefix, *, read_attrs=None, configuration_attrs=None,
+                 **kwargs):
+        if read_attrs is None:
+            read_attrs = []
+        if configuration_attrs is None:
+            configuration_attrs = _get_configuration_attrs(self.__class__)
 
-    soft_input1 = ADSignal('SOFT_IN:B0')
-    soft_input2 = ADSignal('SOFT_IN:B1')
-    soft_input3 = ADSignal('SOFT_IN:B2')
-    soft_input4 = ADSignal('SOFT_IN:B3')
+        super().__init__(prefix, read_attrs=read_attrs,
+                         configuration_attrs=configuration_attrs, **kwargs)
 
-    def __init__(self, *args, **kwargs):
-        super(Zebra, self).__init__(*args, **kwargs)
 
-        self.pulse = {i: ZebraPulse('{}PULSE{}_'.format(self._prefix, i),
-                                    self, i)
-                      for i in range(1, 5)}
-        self.output = {i: ZebraFrontOutput('{}OUT{}_'.format(self._prefix, i))
-                       for i in range(1, 5)}
+class ZebraFrontOutput12(ZebraOutputBase):
+    ttl = Cpt(ZebraOutputType, 'TTL')
+    lvds = Cpt(ZebraOutputType, 'LVDS')
+    nim = Cpt(ZebraOutputType, 'NIM')
 
-        for i in range(5, 9):
-            out_prefix = '{}OUT{}_'.format(self._prefix, i)
-            self.output[i] = ZebraRearOutput(out_prefix)
 
-        self.gate = {i: ZebraGate('{}GATE{}_'.format(self._prefix, i), self, i)
-                     for i in range(1, 5)}
+class ZebraFrontOutput3(ZebraOutputBase):
+    ttl = Cpt(ZebraOutputType, 'TTL')
+    lvds = Cpt(ZebraOutputType, 'LVDS')
+    open_collector = Cpt(ZebraOutputType, 'OC')
 
-        for addr, addr_name in self.addresses.items():
-            setattr(self, addr_name, addr)
 
-        self._scan_modes = {'step_scan': self.step_scan,
-                            'fly_scan': self.fly_scan
-                            }
+class ZebraFrontOutput4(ZebraOutputBase):
+    ttl = Cpt(ZebraOutputType, 'TTL')
+    nim = Cpt(ZebraOutputType, 'NIM')
+    pecl = Cpt(ZebraOutputType, 'PECL')
 
-    def step_scan(self):
-        logger.debug('Zebra %s: configuring step-scan mode', self)
 
-    def fly_scan(self):
-        logger.debug('Zebra %s: configuring fly-scan mode', self)
+class ZebraRearOutput(ZebraOutputBase):
+    enca = Cpt(ZebraOutputType, 'ENCA')
+    encb = Cpt(ZebraOutputType, 'ENCB')
+    encz = Cpt(ZebraOutputType, 'ENCZ')
+    conn = Cpt(ZebraOutputType, 'CONN')
 
-    @property
-    def scan_mode(self):
-        '''The scanning scan_mode'''
-        return self._scan_mode
 
-    @scan_mode.setter
-    def scan_mode(self, scan_mode):
-        try:
-            mode_setup = self._scan_modes[scan_mode]
-        except KeyError:
-            raise ValueError('Unrecognized scan mode {!r}. Available: {}'
-                             ''.format(scan_mode, self._scan_modes.keys()))
+class ZebraGateInput(Device):
+    addr = Cpt(EpicsSignalWithRBV, '')
+    string = Cpt(EpicsSignalRO, ':STR', string=True)
+    status = Cpt(EpicsSignalRO, ':STA')
+    sync = Cpt(EpicsSignal, ':SYNC')
+    write_input = Cpt(EpicsSignal, ':SET')
 
-        mode_setup()
-        self._scan_mode = scan_mode
+    # Input edge index depends on the gate number (these are set in __init__)
+    edge = FC(EpicsSignal,
+              '{self._zebra_prefix}POLARITY:B{self._input_edge_idx}')
 
-    def configure(self, state=None):
-        pass
+    def __init__(self, prefix, *, index=None, parent=None,
+                 configuration_attrs=None, read_attrs=None, **kwargs):
+        if read_attrs is None:
+            read_attrs = []
+        if configuration_attrs is None:
+            configuration_attrs = _get_configuration_attrs(self.__class__)
 
-    def deconfigure(self):
-        pass
+        gate = parent
+        zebra = gate.parent
+
+        self.index = index
+        self._zebra_prefix = zebra.prefix
+        self._input_edge_idx = gate._input_edge_idx[self.index]
+
+        super().__init__(prefix, read_attrs=read_attrs,
+                         configuration_attrs=configuration_attrs,
+                         parent=parent, **kwargs)
+
+
+class ZebraGate(Device):
+    input1 = Cpt(ZebraGateInput, 'INP1', index=1)
+    input2 = Cpt(ZebraGateInput, 'INP2', index=2)
+    output = Cpt(EpicsSignal, 'OUT')
+
+    def __init__(self, prefix, *, index=None, read_attrs=None,
+                 configuration_attrs=None, **kwargs):
+        self.index = index
+        self._input_edge_idx = {1: index - 1,
+                                2: 4 + index - 1
+                                }
+
+        if read_attrs is None:
+            read_attrs = []
+        if configuration_attrs is None:
+            configuration_attrs = ['output']
+
+        super().__init__(prefix, configuration_attrs=configuration_attrs,
+                         read_attrs=read_attrs, **kwargs)
+
+    def set_input_edges(self, edge1, edge2):
+        set_and_wait(self.input1.edge, int(edge1))
+        set_and_wait(self.input2.edge, int(edge2))
+
+
+class Zebra(HxnModalBase, Device):
+    soft_input1 = Cpt(EpicsSignal, 'SOFT_IN:B0')
+    soft_input2 = Cpt(EpicsSignal, 'SOFT_IN:B1')
+    soft_input3 = Cpt(EpicsSignal, 'SOFT_IN:B2')
+    soft_input4 = Cpt(EpicsSignal, 'SOFT_IN:B3')
+
+    pulse1 = Cpt(ZebraPulse, 'PULSE1_', index=1)
+    pulse2 = Cpt(ZebraPulse, 'PULSE2_', index=2)
+    pulse3 = Cpt(ZebraPulse, 'PULSE3_', index=3)
+    pulse4 = Cpt(ZebraPulse, 'PULSE4_', index=4)
+
+    output1 = Cpt(ZebraFrontOutput12, 'OUT1_', index=1)
+    output2 = Cpt(ZebraFrontOutput12, 'OUT2_', index=2)
+    output3 = Cpt(ZebraFrontOutput3, 'OUT3_', index=3)
+    output4 = Cpt(ZebraFrontOutput4, 'OUT4_', index=4)
+
+    output5 = Cpt(ZebraRearOutput, 'OUT5_', index=5)
+    output6 = Cpt(ZebraRearOutput, 'OUT6_', index=6)
+    output7 = Cpt(ZebraRearOutput, 'OUT7_', index=7)
+    output8 = Cpt(ZebraRearOutput, 'OUT8_', index=8)
+
+    gate1 = Cpt(ZebraGate, 'GATE1_', index=1)
+    gate2 = Cpt(ZebraGate, 'GATE2_', index=2)
+    gate3 = Cpt(ZebraGate, 'GATE3_', index=3)
+    gate4 = Cpt(ZebraGate, 'GATE4_', index=4)
+
+    addresses = ZebraAddresses
+
+    def __init__(self, prefix, *, configuration_attrs=None, read_attrs=None,
+                 **kwargs):
+        if read_attrs is None:
+            read_attrs = []
+        if configuration_attrs is None:
+            configuration_attrs = _get_configuration_attrs(self.__class__)
+
+        super().__init__(prefix, configuration_attrs=configuration_attrs,
+                         read_attrs=read_attrs, **kwargs)
+
+        self.pulse = dict(self._get_indexed_devices(ZebraPulse))
+        self.output = dict(self._get_indexed_devices(ZebraOutputBase))
+        self.gate = dict(self._get_indexed_devices(ZebraGate))
+
+    def _get_indexed_devices(self, cls):
+        for attr in self._sub_devices:
+            dev = getattr(self, attr)
+            if isinstance(dev, cls):
+                yield dev.index, dev
+
+    def mode_internal(self):
+        super().mode_internal()
+        # handle the scan type here
+
+    def mode_external(self):
+        super().mode_external()
+        # handle the scan type here
 
     def trigger(self):
         # Re-implement this to trigger as desired in bluesky
-        status = DetectorStatus(self)
+        status = DeviceStatus(self)
         status._finished()
         return status
 
-    def describe(self):
-        return {}
 
-    def read(self):
-        return {}
+class HxnZebra(Zebra):
+    def mode_internal(self):
+        super().mode_internal()
 
-    def stop(self):
-        # TODO bluesky implementation detail
-        pass
+        scan_type = self.mode_settings.scan_type.get()
+        # no concept of internal triggering for now
+        # raise ValueError('Unknown scan type for internal triggering: '
+        #                  '{}'.format(scan_type))
 
+    def mode_external(self):
+        super().mode_external()
 
-class HXNZebra(Zebra):
-    def __init__(self, *args, **kwargs):
-        super(HXNZebra, self).__init__(*args, **kwargs)
+        scan_type = self.mode_settings.scan_type.get()
+        if scan_type == 'fly':
+            self.gate[1].input1.addr.put(ZebraAddresses.IN3_OC)
+            self.gate[1].input2.addr.put(ZebraAddresses.IN3_OC)
+            self.gate[1].set_input_edges(1, 0)
 
-        # NOTE: count_time comes from bluesky
-        self.count_time = None
-        self._mode = None
+            # timepix:
+            # self.output[1].ttl = self.GATE1
+            # merlin:
+            # (Merlin is now on TTL 1 output, replacing timepix 1)
+            self.output[1].ttl.addr.put(ZebraAddresses.GATE2)
+            self.output[2].ttl.addr.put(ZebraAddresses.GATE1)
 
-    def _set_input_edges(self, gate, edge1, edge2):
-        edge1, edge2 = int(edge1), int(edge2)
-        while gate.input1_edge.value != edge1:
-            gate.input1_edge.put(edge1)
-            time.sleep(0.1)
+            self.gate[2].input1.addr.put(ZebraAddresses.IN3_OC)
+            self.gate[2].input2.addr.put(ZebraAddresses.IN3_OC)
+            self.gate[2].set_input_edges(0, 1)
 
-        while gate.input2_edge.value != edge2:
-            gate.input2_edge.put(edge2)
-            time.sleep(0.1)
+            self.output[3].ttl.addr.put(ZebraAddresses.GATE2)
+            self.output[4].ttl.addr.put(ZebraAddresses.GATE2)
 
-    def step_scan(self):
-        super(HXNZebra, self).step_scan()
+            # Merlin LVDS
+            # self.output[1].lvds.put(ZebraAddresses.GATE2)
 
-        # Scaler triggers all detectors
-        # Scaler, output mode 1, LNE (output 5) connected to Zebra IN1_TTL
-        # Pulse 1 has pulse width set to the count_time
+        elif scan_type == 'step':
+            # Scaler triggers all detectors
+            # Scaler, output mode 1, LNE (output 5) connected to Zebra IN1_TTL
+            # Pulse 1 has pulse width set to the count_time
 
-        # OUT1_TTL Merlin
-        # OUT2_TTL Scaler 1 inhibit
-        #
-        # OUT3_TTL Scaler 1 gate
-        # OUT4_TTL Xspress3
-        self.pulse[1].input_.value = self.IN1_TTL
+            # OUT1_TTL Merlin
+            # OUT2_TTL Scaler 1 inhibit
+            #
+            # OUT3_TTL Scaler 1 gate
+            # OUT4_TTL Xspress3
+            self.pulse[1].input_addr.put(ZebraAddresses.IN1_TTL)
 
-        if self.count_time is not None:
-            logger.debug('Step scan pulse-width is %s', self.count_time)
-            self.pulse[1].width.value = self.count_time
-            self.pulse[1].time_units.value = 's'
+            count_time = self.count_time.get()
+            if count_time is not None:
+                logger.debug('Step scan pulse-width is %s', count_time)
+                self.pulse[1].width.put(count_time)
+                self.pulse[1].time_units.put('s')
 
-        self.pulse[1].delay.value = 0.0
-        self.pulse[1].input_edge.value = 1
+            self.pulse[1].delay.put(0.0)
+            self.pulse[1].input_edge.put(1)
 
-        # To be used in regular scaler mode, scaler 1 has to have
-        # inhibit cleared and counting enabled:
-        self.soft_input4.value = 1
+            # To be used in regular scaler mode, scaler 1 has to have
+            # inhibit cleared and counting enabled:
+            self.soft_input4.put(1)
 
-        # Timepix
-        # self.output[1].ttl = self.PULSE1
-        # Merlin
-        self.output[1].ttl.value = self.PULSE1
-        self.output[2].ttl.value = self.SOFT_IN4
+            # Timepix
+            # self.output[1].ttl = self.PULSE1
+            # Merlin
+            self.output[1].ttl.addr.put(ZebraAddresses.PULSE1)
+            self.output[2].ttl.addr.put(ZebraAddresses.SOFT_IN4)
 
-        self.gate[2].input1.value = self.PULSE1
-        self.gate[2].input2.value = self.PULSE1
-        self._set_input_edges(self.gate[2], 0, 1)
+            self.gate[2].input1.addr.put(ZebraAddresses.PULSE1)
+            self.gate[2].input2.addr.put(ZebraAddresses.PULSE1)
+            self.gate[2].set_input_edges(0, 1)
 
-        self.output[3].ttl.value = self.SOFT_IN4
-        self.output[4].ttl.value = self.GATE2
+            self.output[3].ttl.addr.put(ZebraAddresses.SOFT_IN4)
+            self.output[4].ttl.addr.put(ZebraAddresses.GATE2)
 
-        # Merlin LVDS
-        self.output[1].lvds.value = self.PULSE1
-
-    def fly_scan(self):
-        super(HXNZebra, self).fly_scan()
-
-        self.gate[1].input1.value = self.IN3_OC
-        self.gate[1].input2.value = self.IN3_OC
-        self._set_input_edges(self.gate[1], 1, 0)
-
-        # timepix:
-        # self.output[1].ttl = self.GATE1
-        # merlin:
-        # (Merlin is now on TTL 1 output, replacing timepix 1)
-        self.output[1].ttl.value = self.GATE2
-        self.output[2].ttl.value = self.GATE1
-
-        self.gate[2].input1.value = self.IN3_OC
-        self.gate[2].input2.value = self.IN3_OC
-        self._set_input_edges(self.gate[2], 0, 1)
-
-        self.output[3].ttl.value = self.GATE2
-        self.output[4].ttl.value = self.GATE2
-
-        # Merlin LVDS
-        # self.output[1].lvds.value = self.GATE2
-
-    def set(self, total_points=None, scan_mode='step_scan', **kwargs):
-        self.scan_mode = scan_mode
+            # Merlin LVDS
+            self.output[1].lvds.addr.put(ZebraAddresses.PULSE1)
+        else:
+            raise ValueError('Unknown scan type for external triggering: '
+                             '{}'.format(scan_type))

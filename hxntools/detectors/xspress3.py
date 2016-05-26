@@ -1,295 +1,35 @@
-from __future__ import print_function
+from __future__ import print_function, division
 import time
+import time as ttime
 import logging
-import uuid
 import itertools
+import uuid
 
-from collections import namedtuple
+import filestore.api as fs_api
+from filestore.api import bulk_insert_datum
+from .utils import makedirs
+
+from collections import OrderedDict
 
 import h5py
-import filestore.api as fs_api
-from filestore.commands import bulk_insert_datum
 
-from ophyd.controls.areadetector.detectors import (AreaDetector, ADBase,
-                                                   ADSignal)
-from ophyd.controls.area_detector import AreaDetectorFileStore
-from ophyd.controls.detector import (DetectorStatus, Detector)
+from ophyd.areadetector import (DetectorBase, CamBase,
+                                EpicsSignalWithRBV as SignalWithRBV)
+from ophyd import (Signal, EpicsSignal, EpicsSignalRO, DerivedSignal)
 
-from .utils import makedirs
+from ophyd import (Device, Component as Cpt, FormattedComponent as FC,
+                   DynamicDeviceComponent as DDC)
+from ophyd.areadetector.plugins import PluginBase
+from ophyd.areadetector.filestore_mixins import FileStorePluginBase
+
+from ophyd.areadetector.plugins import HDF5Plugin
+from ophyd.device import (BlueskyInterface, Staged)
+from ophyd.ophydobj import DeviceStatus
 
 from ..handlers import Xspress3HDF5Handler
 from ..handlers.xspress3 import XRF_DATA_KEY
 
 logger = logging.getLogger(__name__)
-
-
-class Xspress3FileStore(AreaDetectorFileStore):
-    '''Xspress3 acquisition -> filestore'''
-
-    def __init__(self, det, basename, file_template='%s%s_%6.6d.h5',
-                 config_time=0.5,
-                 mds_key_format='{self._det.name}_ch{chan}',
-                 **kwargs):
-        super().__init__(basename, cam='', reset_acquire=False,
-                         use_image_mode=False, **kwargs)
-
-        self._det = det
-        # Use the EpicsSignal file_template from the detector
-        self._file_template = det.hdf5.file_template
-        # (_file_template is used in _make_filename, etc)
-        self.file_template = file_template
-        self._filestore_res = None
-        self.channels = list(range(1, det.num_channels + 1))
-        self._total_points = None
-        self._master = None
-        self._external_trig = None
-        self._config_time = config_time
-        self.mds_keys = {chan: mds_key_format.format(self=self, chan=chan)
-                         for chan in self.channels}
-        self._file_plugin = None
-
-    def _get_datum_args(self, seq_num):
-        for chan in self.channels:
-            yield {'frame': seq_num, 'channel': chan}
-
-    def read(self):
-        timestamp = time.time()
-        uids = [str(uuid.uuid4()) for ch in self.channels]
-
-        bulk_insert_datum(self._filestore_res, uids,
-                          self._get_datum_args(self._abs_trigger_count))
-
-        self._abs_trigger_count += 1
-        return {self.mds_keys[ch]: {'timestamp': timestamp,
-                                    'value': uid,
-                                    }
-                for uid, ch in zip(uids, self.channels)
-                }
-
-    def bulk_read(self, timestamps):
-        channels = self.channels
-        ch_uids = {ch: [str(uuid.uuid4()) for ts in timestamps]
-                   for ch in channels}
-
-        count = len(timestamps)
-        if count == 0:
-            return {}
-
-        def get_datum_args():
-            for ch in channels:
-                for seq_num in range(count):
-                    yield {'frame': seq_num,
-                           'channel': ch}
-
-        uids = [ch_uids[ch] for ch in channels]
-        bulk_insert_datum(self._filestore_res, itertools.chain(*uids),
-                          get_datum_args())
-
-        return {self.mds_keys[ch]: ch_uids[ch]
-                for ch in channels
-                }
-
-    def _make_filename(self, **kwargs):
-        super()._make_filename(**kwargs)
-
-        makedirs(self._store_file_path)
-
-    def deconfigure(self, *args, **kwargs):
-        # self._det.hdf5.capture.put(0)
-        try:
-            i = 0
-            while self._det.hdf5.capture.value == 1:
-                i += 1
-                if (i % 50) == 0:
-                    logger.warning('Still capturing data .... waiting.')
-                time.sleep(0.1)
-        except KeyboardInterrupt:
-            logger.warning('Still capturing data .... interrupted.')
-
-        self._det.trigger_mode.put('Internal')
-        self._total_points = None
-        self._master = None
-
-        # TODO
-        self._old_image_mode = self._image_mode.value
-        self._old_acquire = self._acquire.value
-
-        super().deconfigure()
-
-    def set(self, total_points=0, master=None, external_trig=False,
-            **kwargs):
-        self._total_points = total_points
-        self._master = master
-        self._external_trig = external_trig
-
-    def configure(self, state=None):
-        ext_trig = (self._master is not None or self._external_trig)
-
-        logger.debug('Stopping xspress3 acquisition')
-        self._det.acquire.put(0)
-
-        time.sleep(0.1)
-
-        if ext_trig:
-            logger.debug('Setting up external triggering')
-            self._det.trigger_mode.put('TTL Veto Only')
-            if self._total_points is None:
-                raise RuntimeError('set was not called on this detector')
-
-            self._det.num_images.put(self._total_points)
-        else:
-            logger.debug('Setting up internal triggering')
-            self._det.trigger_mode.put('Internal')
-            self._det.num_images.put(1)
-
-        logger.debug('Configuring other filestore stuff')
-        super(Xspress3FileStore, self).configure(state=state)
-
-        logger.debug('Making the filename')
-        self._make_filename(seq=0)
-
-        logger.debug('Setting up hdf5 plugin: ioc path: %s filename: %s',
-                     self._ioc_file_path, self._filename)
-        self._det.hdf5.file_template.put(self.file_template, wait=True)
-        self._det.hdf5.file_number.put(0)
-        self._det.hdf5.blocking_callbacks.put(1)
-        self._det.hdf5.enable.put(1)
-        self._det.hdf5.file_path.put(self._ioc_file_path, wait=True)
-        self._det.hdf5.file_name.put(self._filename, wait=True)
-
-        if not self._det.hdf5.file_path_exists.value:
-            raise IOError("Path {} does not exits on IOC!! Please Check"
-                          .format(self._det.hdf5.file_path.value))
-
-        logger.debug('Inserting the filestore resource')
-        self._filestore_res = self._insert_fs_resource()
-
-        logger.debug('Erasing old spectra')
-        self._det.xs_erase.put(1)
-        self._det.hdf5.capture.put(1, wait=False)
-
-        if ext_trig:
-            logger.debug('Starting acquisition (waiting for triggers)')
-            self._det.acquire.put(1, wait=False)
-
-        # Xspress3 needs a bit of time to configure itself...
-        time.sleep(self._config_time)
-
-    @property
-    def count_time(self):
-        return self._det.acquire_period.value
-
-    @count_time.setter
-    def count_time(self, val):
-        self._det.acquire_period.put(val)
-
-    def acquire(self, **kwargs):
-        status = DetectorStatus(self)
-        status._finished()
-        # scaler/zebra take care of timing
-        return status
-
-    def describe(self):
-        # TODO: describe is called prior to configure, so the filestore resource
-        #       is not yet generated
-        size = (self._det.hdf5.width.value, )
-
-        spec_desc = {'external': 'FILESTORE:',
-                     'dtype': 'array',
-                     'shape': size,
-                     }
-
-        if self._filestore_res is not None:
-            source = 'FileStore:{0.id!s}'.format(self._filestore_res)
-        else:
-            source = 'FileStore:'
-
-        spec_desc['source'] = source
-
-        desc = {}
-        for chan in self.channels:
-            desc['{}_ch{}'.format(self._det.name, chan)] = spec_desc
-
-        return desc
-
-    def _insert_fs_resource(self):
-        return fs_api.insert_resource(Xspress3HDF5Handler.HANDLER_NAME,
-                                      self.store_filename, {})
-
-    @property
-    def store_filename(self):
-        return self._store_filename
-
-    @property
-    def ioc_filename(self):
-        return self._ioc_filename
-
-
-class Xspress3Detector(AreaDetector):
-    '''Quantum Detectors Xspress3 detector'''
-
-    _html_docs = ['']
-    xs_config_path = ADSignal('CONFIG_PATH', has_rbv=True)
-    xs_config_save_path = ADSignal('CONFIG_SAVE_PATH', has_rbv=True)
-    xs_connect = ADSignal('CONNECT')
-    xs_connected = ADSignal('CONNECTED')
-    xs_ctrl_dtc = ADSignal('CTRL_DTC', has_rbv=True)
-    xs_ctrl_mca_roi = ADSignal('CTRL_MCA_ROI', has_rbv=True)
-    xs_debounce = ADSignal('DEBOUNCE', has_rbv=True)
-    xs_disconnect = ADSignal('DISCONNECT')
-    xs_erase = ADSignal('ERASE')
-    xs_erase_array_counters = ADSignal('ERASE_ArrayCounters')
-    xs_erase_attr_reset = ADSignal('ERASE_AttrReset')
-    xs_erase_proc_reset_filter = ADSignal('ERASE_PROC_ResetFilter')
-    xs_frame_count = ADSignal('FRAME_COUNT_RBV', rw=False)
-    xs_hdf_capture = ADSignal('HDF5:Capture_RBV', rw=False)
-    xs_hdf_num_capture_calc = ADSignal('HDF5:NumCapture_CALC')
-    xs_invert_f0 = ADSignal('INVERT_F0', has_rbv=True)
-    xs_invert_veto = ADSignal('INVERT_VETO', has_rbv=True)
-    xs_max_frames = ADSignal('MAX_FRAMES_RBV', rw=False)
-    xs_max_frames_driver = ADSignal('MAX_FRAMES_DRIVER_RBV', rw=False)
-    xs_max_num_channels = ADSignal('MAX_NUM_CHANNELS_RBV', rw=False)
-    xs_max_spectra = ADSignal('MAX_SPECTRA', has_rbv=True)
-    xs_name = ADSignal('NAME')
-    xs_num_cards = ADSignal('NUM_CARDS_RBV', rw=False)
-    xs_num_channels = ADSignal('NUM_CHANNELS', has_rbv=True)
-    xs_num_frames_config = ADSignal('NUM_FRAMES_CONFIG', has_rbv=True)
-    xs_reset = ADSignal('RESET')
-    xs_restore_settings = ADSignal('RESTORE_SETTINGS')
-    xs_run_flags = ADSignal('RUN_FLAGS', has_rbv=True)
-    xs_save_settings = ADSignal('SAVE_SETTINGS')
-    xs_trigger = ADSignal('TRIGGER')
-    xs_update = ADSignal('UPDATE')
-    xs_update_attr = ADSignal('UPDATE_AttrUpdate')
-
-    def __init__(self, prefix, file_path='', ioc_file_path='',
-                 default_channels=None, num_roi=16, num_channels=8,
-                 channel_prefix=None, roi_sums=False,
-                 **kwargs):
-        AreaDetector.__init__(self, prefix, **kwargs)
-
-        if default_channels is None:
-            default_channels = [1, 2, 3]
-
-        self.default_channels = list(default_channels)
-        self.num_roi = int(num_roi)
-        self.num_channels = int(num_channels)
-        self.rois = Xspress3Rois(self, channel_prefix=channel_prefix,
-                                 use_sums=roi_sums)
-
-        self.filestore = Xspress3FileStore(self, self._base_prefix,
-                                           stats=[], shutter=None,
-                                           file_path=file_path,
-                                           ioc_file_path=ioc_file_path,
-                                           name=self.name)
-
-    @property
-    def filestore_id(self):
-        return self.filestore._filestore_res
-
-    @property
-    def prefix(self):
-        return self._prefix
 
 
 def ev_to_bin(ev):
@@ -302,328 +42,594 @@ def bin_to_ev(bin_):
     return int(bin_) * 10
 
 
-_roi_tuple = namedtuple('ROISnapshot', 'name chan ev_low ev_high bin_low '
-                                       'bin_high data epics_roi')
+class EvSignal(DerivedSignal):
+    '''A signal that converts a bin number into electron volts'''
+    def __init__(self, parent_attr, *, parent=None, **kwargs):
+        bin_signal = getattr(parent, parent_attr)
+        super().__init__(derived_from=bin_signal, parent=parent, **kwargs)
+
+    def get(self, **kwargs):
+        bin_ = super().get(**kwargs)
+        return bin_to_ev(bin_)
+
+    def put(self, ev_value, **kwargs):
+        bin_value = ev_to_bin(ev_value)
+        return super().put(bin_value, **kwargs)
+
+    def describe(self):
+        desc = super().describe()
+        desc[self.name]['units'] = 'eV'
+        return desc
 
 
-class ROISnapshot(_roi_tuple):
-    '''A non-configurable snapshot of an Xspress3 ROI'''
+class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
+    '''Xspress3 acquisition -> filestore'''
+    num_capture_calc = Cpt(EpicsSignal, 'NumCapture_CALC')
+    num_capture_calc_disable = Cpt(EpicsSignal, 'NumCapture_CALC.DISA')
 
-    def __new__(cls, chan=1, ev_low=None, ev_high=None,
-                bin_low=None, bin_high=None, name='name', data=None,
-                epics_roi=None):
-        if ev_low is not None and ev_high is not None:
-            bin_low = ev_to_bin(ev_low)
-            bin_high = ev_to_bin(ev_high)
-        elif bin_low is not None and bin_high is not None:
-            ev_low = bin_to_ev(bin_low)
-            ev_high = bin_to_ev(bin_high)
+    def __init__(self, basename, *, config_time=0.5,
+                 mds_key_format='{self.settings.name}_ch{chan}', parent=None,
+                 **kwargs):
+        super().__init__(basename, parent=parent, **kwargs)
+        det = parent
+        self.settings = det.settings
+
+        # Use the EpicsSignal file_template from the detector
+        self.stage_sigs[self.blocking_callbacks] = 1
+        self.stage_sigs[self.enable] = 1
+        self.stage_sigs[self.compression] = 'zlib'
+        self.stage_sigs[self.file_template] = '%s%s_%6.6d.h5'
+
+        self._filestore_res = None
+        self.channels = list(range(1, len([_ for _ in det.signal_names
+                                           if _.startswith('chan')]) + 1))
+        # this was in original code, but I kinda-sorta nuked because
+        # it was not needed for SRX and I could not guess what it did
+        self._master = None
+
+        self._config_time = config_time
+        self.mds_keys = {chan: mds_key_format.format(self=self, chan=chan)
+                         for chan in self.channels}
+
+    def _get_datum_args(self, seq_num):
+        for chan in self.channels:
+            yield {'frame': seq_num - 1, 'channel': chan}
+
+    def read(self):
+        timestamp = time.time()
+        uids = [str(uuid.uuid4()) for ch in self.channels]
+
+        bulk_insert_datum(self._filestore_res, uids,
+                          self._get_datum_args(self.parent._abs_trigger_count))
+        # print(self._get_datum_args(self.parent._abs_trigger_count))
+
+        return {self.mds_keys[ch]: {'timestamp': timestamp,
+                                    'value': uid,
+                                    }
+                for uid, ch in zip(uids, self.channels)
+                }
+
+    def stop(self):
+        ret = super().stop()
+        self.capture.put(0)
+        return ret
+
+    def kickoff(self):
+        # TODO
+        raise NotImplementedError()
+
+    def collect(self):
+        # TODO (hxn-specific implementation elsewhere)
+        raise NotImplementedError()
+
+    def make_filename(self):
+        fn, rp, write_path = super().make_filename()
+        if self.parent.make_directories.get():
+            makedirs(write_path)
+        return fn, rp, write_path
+
+    def unstage(self):
+        try:
+            i = 0
+            # this needs a fail-safe, RE will now hang forever here
+            # as we eat all SIGINT to ensure that cleanup happens in
+            # orderly manner.
+            while self.capture.get() == 1:
+                i += 1
+                if (i % 50) == 0:
+                    logger.warning('Still capturing data .... waiting.')
+                time.sleep(0.1)
+                if i > 150:
+                    logger.warning('Still capturing data .... giving up.')
+                    self.capture.put(0)
+                    break
+
+        except KeyboardInterrupt:
+            logger.warning('Still capturing data .... interrupted.')
+
+        return super().unstage()
+
+    def stage(self):
+        # if should external trigger
+        ext_trig = self.parent.external_trig.get()
+
+        logger.debug('Stopping xspress3 acquisition')
+        # really force it to stop acquiring
+        self.settings.acquire.put(0, wait=True)
+
+        total_points = self.parent.total_points.get()
+        spec_per_point = self.parent.spectra_per_point.get()
+        total_capture = total_points * spec_per_point
+
+        # stop previous acquisition
+        self.stage_sigs[self.settings.acquire] = 0
+
+        # re-order the stage signals and disable the calc record which is
+        # interfering with the capture count
+        self.stage_sigs.pop(self.num_capture, None)
+        self.stage_sigs.pop(self.settings.num_images, None)
+        self.stage_sigs[self.num_capture_calc_disable] = 1
+
+        if ext_trig:
+            logger.debug('Setting up external triggering')
+            self.stage_sigs[self.settings.trigger_mode] = 'TTL Veto Only'
+            self.stage_sigs[self.settings.num_images] = total_capture
         else:
-            raise ValueError('Bin or energy must be specified')
+            logger.debug('Setting up internal triggering')
+            # self.settings.trigger_mode.put('Internal')
+            # self.settings.num_images.put(1)
+            self.stage_sigs[self.settings.trigger_mode] = 'Internal'
+            self.stage_sigs[self.settings.num_images] = spec_per_point
 
-        return super(ROISnapshot, cls).__new__(cls, name, chan, ev_low,
-                                               ev_high, bin_low, bin_high,
-                                               data, epics_roi)
+        self.stage_sigs[self.auto_save] = 'No'
+        logger.debug('Configuring other filestore stuff')
+
+        logger.debug('Making the filename')
+        filename, read_path, write_path = self.make_filename()
+
+        logger.debug('Setting up hdf5 plugin: ioc path: %s filename: %s',
+                     write_path, filename)
+
+        logger.debug('Erasing old spectra')
+        self.settings.erase.put(1, wait=True)
+
+        # this must be set after self.settings.num_images because at the Epics
+        # layer  there is a helpful link that sets this equal to that (but
+        # not the other way)
+        self.stage_sigs[self.num_capture] = total_capture
+
+        # actually apply the stage_sigs
+        ret = super().stage()
+
+        self._fn = self.file_template.get() % (self._fp,
+                                               self.file_name.get(),
+                                               self.file_number.get())
+
+        if not self.file_path_exists.value:
+            raise IOError("Path {} does not exits on IOC!! Please Check"
+                          .format(self.file_path.value))
+
+        logger.debug('Inserting the filestore resource: %s', self._fn)
+        self._filestore_res = fs_api.insert_resource(
+            Xspress3HDF5Handler.HANDLER_NAME, self._fn, {})
+
+        # this gets auto turned off at the end
+        self.capture.put(1)
+
+        # Xspress3 needs a bit of time to configure itself...
+        # this does not play nice with the event loop :/
+        time.sleep(self._config_time)
+
+        return ret
+
+    def configure(self, total_points=0, master=None, external_trig=False,
+                  **kwargs):
+        raise NotImplementedError()
+
+    def describe(self):
+        # should this use a better value?
+        size = (self.width.get(), )
+
+        spec_desc = {'external': 'FILESTORE:',
+                     'dtype': 'array',
+                     'shape': size,
+                     }
+        # shouldn't the source be the array PV?
+        if self._filestore_res is not None:
+            source = 'FileStore::{!s}'.format(self._filestore_res['id'])
+        else:
+            source = 'FileStore:'
+
+        spec_desc['source'] = source
+
+        desc = OrderedDict()
+        for chan in self.channels:
+            key = self.mds_keys[chan]
+            desc[key] = spec_desc
+
+        return desc
 
 
-class EpicsROI(ADBase, Detector):
+class Xspress3DetectorSettings(CamBase):
+    '''Quantum Detectors Xspress3 detector'''
+
+    def __init__(self, prefix, *, read_attrs=None, configuration_attrs=None,
+                 **kwargs):
+        if read_attrs is None:
+            read_attrs = []
+        if configuration_attrs is None:
+            configuration_attrs = ['config_path', 'config_save_path',
+                                   ]
+        super().__init__(prefix, read_attrs=read_attrs,
+                         configuration_attrs=configuration_attrs, **kwargs)
+
+    config_path = Cpt(SignalWithRBV, 'CONFIG_PATH', string=True)
+    config_save_path = Cpt(SignalWithRBV, 'CONFIG_SAVE_PATH', string=True)
+    connect = Cpt(EpicsSignal, 'CONNECT')
+    connected = Cpt(EpicsSignal, 'CONNECTED')
+    ctrl_dtc = Cpt(SignalWithRBV, 'CTRL_DTC')
+    ctrl_mca_roi = Cpt(SignalWithRBV, 'CTRL_MCA_ROI')
+    debounce = Cpt(SignalWithRBV, 'DEBOUNCE')
+    disconnect = Cpt(EpicsSignal, 'DISCONNECT')
+    erase = Cpt(EpicsSignal, 'ERASE')
+    # erase_array_counters = Cpt(EpicsSignal, 'ERASE_ArrayCounters')
+    # erase_attr_reset = Cpt(EpicsSignal, 'ERASE_AttrReset')
+    # erase_proc_reset_filter = Cpt(EpicsSignal, 'ERASE_PROC_ResetFilter')
+    frame_count = Cpt(EpicsSignalRO, 'FRAME_COUNT_RBV')
+    invert_f0 = Cpt(SignalWithRBV, 'INVERT_F0')
+    invert_veto = Cpt(SignalWithRBV, 'INVERT_VETO')
+    max_frames = Cpt(EpicsSignalRO, 'MAX_FRAMES_RBV')
+    max_frames_driver = Cpt(EpicsSignalRO, 'MAX_FRAMES_DRIVER_RBV')
+    max_num_channels = Cpt(EpicsSignalRO, 'MAX_NUM_CHANNELS_RBV')
+    max_spectra = Cpt(SignalWithRBV, 'MAX_SPECTRA')
+    xsp_name = Cpt(EpicsSignal, 'NAME')
+    num_cards = Cpt(EpicsSignalRO, 'NUM_CARDS_RBV')
+    num_channels = Cpt(SignalWithRBV, 'NUM_CHANNELS')
+    num_frames_config = Cpt(SignalWithRBV, 'NUM_FRAMES_CONFIG')
+    reset = Cpt(EpicsSignal, 'RESET')
+    restore_settings = Cpt(EpicsSignal, 'RESTORE_SETTINGS')
+    run_flags = Cpt(SignalWithRBV, 'RUN_FLAGS')
+    save_settings = Cpt(EpicsSignal, 'SAVE_SETTINGS')
+    trigger = Cpt(EpicsSignal, 'TRIGGER')
+    # update = Cpt(EpicsSignal, 'UPDATE')
+    # update_attr = Cpt(EpicsSignal, 'UPDATE_AttrUpdate')
+
+
+class Xspress3ROISettings(PluginBase):
+    '''Full areaDetector plugin settings'''
+    array_data = Cpt(EpicsSignalRO, 'ArrayData_RBV')
+
+
+class Xspress3ROI(Device):
     '''A configurable Xspress3 EPICS ROI'''
 
-    array = ADSignal('C{self.channel}_ROI{self.roi_num}:ArrayData_RBV',
-                     rw=False)
-    value = ADSignal('C{self.channel}_ROI{self.roi_num}:Value_RBV', rw=False)
-    value_sum = ADSignal('C{self.channel}_ROI{self.roi_num}:ValueSum_RBV',
-                         rw=False)
-    bin_low = ADSignal('C{self.channel}_MCA_ROI{self.roi_num}_LLM')
-    bin_high = ADSignal('C{self.channel}_MCA_ROI{self.roi_num}_HLM')
-    enabled = ADSignal('C{self.channel}_ROI{self.roi_num}:EnableCallbacks',
-                       has_rbv=True)
-    vis_enabled = ADSignal('C{self.channel}_PluginControlVal', rw=True)
+    # prefix: C{channel}_   MCA_ROI{self.roi_num}
+    bin_low = FC(SignalWithRBV, '{self.channel.prefix}{self.bin_suffix}_LLM')
+    bin_high = FC(SignalWithRBV, '{self.channel.prefix}{self.bin_suffix}_HLM')
 
-    def __init__(self, prefix, channel, roi_num, use_sum=False, **kwargs):
-        super(EpicsROI, self).__init__(prefix, **kwargs)
+    # derived from the bin signals, low and high electron volt settings:
+    ev_low = Cpt(EvSignal, parent_attr='bin_low')
+    ev_high = Cpt(EvSignal, parent_attr='bin_high')
+
+    # C{channel}_  ROI{self.roi_num}
+    value = Cpt(EpicsSignalRO, 'Value_RBV')
+    value_sum = Cpt(EpicsSignalRO, 'ValueSum_RBV')
+
+    enable = Cpt(SignalWithRBV, 'EnableCallbacks')
+    # ad_plugin = Cpt(Xspress3ROISettings, '')
+
+    def __init__(self, prefix, *, roi_num=0, use_sum=False,
+                 read_attrs=None, configuration_attrs=None, parent=None,
+                 bin_suffix=None, **kwargs):
+
+        if read_attrs is None:
+            if use_sum:
+                read_attrs = ['value_sum']
+            else:
+                read_attrs = ['value', 'value_sum']
+
+        if configuration_attrs is None:
+            configuration_attrs = ['ev_low', 'ev_high', 'enable']
+
+        rois = parent
+        channel = rois.parent
         self._channel = channel
         self._roi_num = roi_num
         self._use_sum = use_sum
+        self._ad_plugin = getattr(rois, 'ad_attr{:02d}'.format(roi_num))
+
+        if bin_suffix is None:
+            bin_suffix = 'MCA_ROI{}'.format(roi_num)
+
+        self.bin_suffix = bin_suffix
+
+        super().__init__(prefix, parent=parent, read_attrs=read_attrs,
+                         configuration_attrs=configuration_attrs, **kwargs)
+
+    @property
+    def settings(self):
+        '''Full areaDetector settings'''
+        return self._ad_plugin
 
     @property
     def channel(self):
+        '''The Xspress3Channel instance associated with the ROI'''
         return self._channel
 
     @property
+    def channel_num(self):
+        '''The channel number associated with the ROI'''
+        return self._channel.channel_num
+
+    @property
     def roi_num(self):
+        '''The ROI number'''
         return self._roi_num
 
-    @property
-    def prefix(self):
-        return self._prefix
-
-    @property
-    def ev_low(self):
-        return bin_to_ev(self.bin_low.value)
-
-    @ev_low.setter
-    def ev_low(self, ev):
-        self.bin_low.value = ev_to_bin(ev)
-
-    @property
-    def ev_high(self):
-        return bin_to_ev(self.bin_high.value)
-
-    @ev_high.setter
-    def ev_high(self, ev):
-        self.bin_high.value = ev_to_bin(ev)
-
     def clear(self):
-        if self.bin_low.value == self.bin_high.value == 0:
-            return
+        '''Clear and disable this ROI'''
+        self.configure(0, 0)
 
-        self.bin_low.put(0)
-        self.bin_high.put(0)
-        self.enabled.put(0)
-
-    def set_roi(self, low, high, units='ev'):
-        if units == 'ev':
-            low = ev_to_bin(low)
-            high = ev_to_bin(high)
-        elif units == 'bin':
-            low = int(low)
-            high = int(high)
-        else:
-            raise ValueError('Unknown units. Expected either "ev" or "bin"')
-
-        enable = 1 if high > low else 0
-        changed = any([self.bin_high.value != high,
-                       self.bin_low.value != low,
-                       self.enabled.value != enable])
-
-        if changed:
-            logger.debug('Setting up EPICS ROI: name=%s bins=(%s, %s) '
-                         'enable=%s prefix=%s channel=%s',
-                         self.name, low, high, enable, self._prefix,
-                         self._channel)
-            if high <= self.bin_low.value:
-                self.bin_low.put(0)
-
-            self.bin_high.put(high)
-            self.bin_low.put(low)
-            self.enabled.put(enable)
-
-    @property
-    def _read_signal(self):
-        '''The signal which is read for data acquisition'''
-        if self._use_sum:
-            return self.value_sum
-        return self.value
-
-    def read(self):
-        return {self.name: dict(value=self._read_signal.get(),
-                                timestamp=time.time())}
-
-    def describe(self):
-        source = 'PV:{}'.format(self._read_signal.pvname)
-        return {self.name: dict(dtype='number', shape=[],
-                                source=source)}
-
-
-class Xspress3Rois(object):
-    '''Xspress3 ROI configuration
-
-    .. note:: Can optionally configure more than the EPICS IOC supports
-    '''
-    def __init__(self, det, channel_prefix=None, limit_rois=False,
-                 name_format='{self.channel_prefix}{channel}_{name}',
-                 use_sums=False):
-        self._det = det
-        self._roi_config = {}
-        self.channel_prefix = channel_prefix
-        self.name_format = name_format
-        self.num_roi = det.num_roi
-        self.num_channels = det.num_channels
-        self.limit_rois = limit_rois
-        self.use_sums = use_sums
-
-    def read_hdf5(self, fn, rois=None, wait=True, max_retries=2,
-                  data_key=XRF_DATA_KEY):
-        '''Read ROIs from an hdf5 file'''
-
-        if rois is None:
-            rois = [roi for nchan, chan in sorted(self._roi_config.items())
-                    for nroi, roi in sorted(chan.items())
-                    ]
-
-        warned = False
-        det = self._det
-        num_points = det.num_images.value
-        retry = 0
-        while retry < max_retries:
-            retry += 1
-            try:
-                try:
-                    hdf = h5py.File(fn, 'r')
-                except (IOError, OSError):
-                    if not warned:
-                        logger.error('Xspress3 hdf5 file still open; press '
-                                     'Ctrl-C to cancel')
-                        warned = True
-
-                    time.sleep(2.0)
-                    det.hdf5.capture.put(0)
-                    det.acquire.put(0)
-                    if not wait:
-                        raise RuntimeError('Unable to open HDF5 file; retry '
-                                           'disabled')
-
-                else:
-                    if warned:
-                        logger.info('Xspress3 hdf5 file opened')
-                    break
-            except KeyboardInterrupt:
-                raise RuntimeError('Unable to open HDF5 file; interrupted '
-                                   'by Ctrl-C')
-
-        if retry >= max_retries:
-            raise RuntimeError('Unable to open HDF5 file; exceeded maximum '
-                               'retries')
-        else:
-            handler = Xspress3HDF5Handler(hdf, key=data_key)
-            for roi_info in sorted(rois, key=lambda x: x.name):
-                roi_data = handler.get_roi(roi_info, max_points=num_points)
-                yield ROISnapshot(chan=roi_info.chan, ev_low=roi_info.ev_low,
-                                  ev_high=roi_info.ev_high, name=roi_info.name,
-                                  data=roi_data)
-
-    def get_roi_name(self, channel, suffix):
-        '''Format an ROI name according to the channel prefix'''
-        if self.name_format is not None:
-            return self.name_format.format(self=self, channel=channel,
-                                           name=suffix)
-        else:
-            return suffix
-
-    def set(self, channel, roi, ev_low, ev_high, name=None):
-        '''Configure an ROI on a specific channel'''
-        if channel not in self._roi_config:
-            self._roi_config[channel] = {}
-
-        epics_roi = None
-
-        ev_low = int(ev_low)
-        ev_high = int(ev_high)
-
-        if ev_low == ev_high == 0:
-            try:
-                epics_roi = self._roi_config[channel][roi].epics_roi
-                del self._roi_config[channel][roi]
-            except KeyError:
-                return
-
-            if epics_roi is not None:
-                epics_roi.clear()
-        else:
-            if roi <= self.num_roi:
-                epics_roi = EpicsROI(self._det.prefix, channel, roi, name=name,
-                                     use_sum=self.use_sums)
-            else:
-                if self.limit_rois:
-                    raise ValueError('Cannot add more ROIs than the EPICS layer '
-                                     'supports (limit_rois is enabled)')
-
-                logger.warning('ROI {} will be recorded in fly scans but will '
-                               'not be available for live preview (num_roi={})'
-                               ''.format(name, self.num_roi))
-
-            if epics_roi is not None:
-                epics_roi.set_roi(ev_low, ev_high, units='ev')
-
-            info = ROISnapshot(chan=channel, ev_low=ev_low, ev_high=ev_high,
-                               name=name, epics_roi=epics_roi)
-            self._roi_config[channel][roi] = info
-
-    @property
-    def rois(self):
-        '''All configured ROIs'''
-
-        for chan, chan_rois in self._roi_config.items():
-            for roi_num, roi in chan_rois.items():
-                yield roi
-
-    def get_epics_rois(self, channels=None, names=None, full_names=None):
-        '''Get the EPICS ROIs which can be used in data collection
+    def configure(self, ev_low, ev_high):
+        '''Configure the ROI with low and high eV
 
         Parameters
         ----------
-        channels : list, optional
-            A list of channels to match
-        full_names : list, optional
-            A list of full names to match, e.g., ['Det1_Si']
-        names : list, optional
-            A list of partial names to match, e.g., ['Si'] would match
-            Det1_Si, Det2_Si, and so on.
+        ev_low : int
+            low electron volts for ROI
+        ev_high : int
+            high electron volts for ROI
         '''
-        for roi in self.rois:
-            if channels is not None and roi.chan not in channels:
-                continue
+        ev_low = int(ev_low)
+        ev_high = int(ev_high)
 
-            if full_names is not None and roi.name not in full_names:
-                continue
+        enable = 1 if ev_high > ev_low else 0
+        changed = any([self.ev_high.get() != ev_high,
+                       self.ev_low.get() != ev_low,
+                       self.enable.get() != enable])
 
-            if names is not None:
-                found = False
-                for name in names:
-                    if roi.name.endswith(name):
-                        found = True
-                        break
+        if not changed:
+            return
 
-                if not found:
-                    continue
+        logger.debug('Setting up EPICS ROI: name=%s ev=(%s, %s) '
+                     'enable=%s prefix=%s channel=%s',
+                     self.name, ev_low, ev_high, enable, self.prefix,
+                     self._channel)
+        if ev_high <= self.ev_low.get():
+            self.ev_low.put(0)
 
-            if roi.epics_roi is not None:
-                yield roi.epics_roi
+        self.ev_high.put(ev_high)
+        self.ev_low.put(ev_low)
+        self.enable.put(enable)
 
-    def clear(self, channel, roi):
-        '''Clear ROI from a specific channel by index'''
-        return self.set(channel, roi, 0, 0)
 
-    def clear_all(self, channels=None):
-        '''Clear all ROIs on the specified channels
+def make_rois(rois):
+    defn = OrderedDict()
+    for roi in rois:
+        attr = 'roi{:02d}'.format(roi)
+        #             cls          prefix                kwargs
+        defn[attr] = (Xspress3ROI, 'ROI{}:'.format(roi), dict(roi_num=roi))
+        # e.g., device.rois.roi01 = Xspress3ROI('ROI1:', roi_num=1)
 
-        If no channels are specified, all will be cleared.
+        # AreaDetector NDPluginAttribute information
+        attr = 'ad_attr{:02d}'.format(roi)
+        defn[attr] = (Xspress3ROISettings, 'ROI{}:'.format(roi),
+                      dict(read_attrs=[]))
+        # e.g., device.rois.roi01 = Xspress3ROI('ROI1:', roi_num=1)
+
+        # TODO: 'roi01' and 'ad_attr_01' have the same prefix and could
+        # technically be combined. Is this desirable?
+
+    defn['num_rois'] = (Signal, None, dict(value=len(rois)))
+    # e.g., device.rois.num_rois.get() => 16
+    return defn
+
+
+class Xspress3Channel(Device):
+    roi_name_format = 'Det{self.channel_num}_{roi_name}'
+    roi_sum_name_format = 'Det{self.channel_num}_{roi_name}_sum'
+
+    rois = DDC(make_rois(range(1, 17)))
+    vis_enabled = Cpt(EpicsSignal, 'PluginControlVal')
+
+    def __init__(self, prefix, *, channel_num=None, **kwargs):
+        self.channel_num = int(channel_num)
+
+        super().__init__(prefix, **kwargs)
+
+    @property
+    def all_rois(self):
+        for roi in range(1, self.rois.num_rois.get() + 1):
+            yield getattr(self.rois, 'roi{:02d}'.format(roi))
+
+    def set_roi(self, index, ev_low, ev_high, *, name=None):
+        '''Set specified ROI to (ev_low, ev_high)
+
+        Parameters
+        ----------
+        index : int or Xspress3ROI
+            The roi index or instance to set
+        ev_low : int
+            low eV setting
+        ev_high : int
+            high eV setting
+        name : str, optional
+            The unformatted ROI name to set. Each channel specifies its own
+            `roi_name_format` and `roi_sum_name_format` in which the name
+            parameter will get expanded.
         '''
+        if isinstance(index, Xspress3ROI):
+            roi = index
+        else:
+            if index <= 0:
+                raise ValueError('ROI index starts from 1')
+            roi = list(self.all_rois)[index - 1]
 
-        if channels is None:
-            channels = self._roi_config.keys()
+        roi.configure(ev_low, ev_high)
+        if name is not None:
+            roi_name = self.roi_name_format.format(self=self, roi_name=name)
+            roi.name = roi_name
+            roi.value.name = roi_name
+            roi.value_sum.name = self.roi_sum_name_format.format(self=self,
+                                                                 roi_name=name)
 
-        for channel in channels:
-            chan_rois = self._roi_config[channel]
-            for roi_num in list(chan_rois.keys()):
-                roi = chan_rois[roi_num]
-                if roi.epics_roi is not None:
-                    roi.epics_roi.clear()
+    def clear_all_rois(self):
+        '''Clear all ROIs'''
+        for roi in self.all_rois:
+            roi.clear()
 
-            chan_rois.clear()
 
-    def add(self, ev_low, ev_high, name, channels=None):
-        '''Add an ROI from ev_low to ev_high on the given channels
+class Xspress3Detector(DetectorBase):
+    settings = Cpt(Xspress3DetectorSettings, '')
 
-        If a channel prefix is set, each roi name will be formatted
-        accordingly.
+    external_trig = Cpt(Signal, value=False,
+                        doc='Use external triggering')
+    total_points = Cpt(Signal, value=2,
+                       doc='The total number of points to acquire overall')
+    spectra_per_point = Cpt(Signal, value=1,
+                            doc='Number of spectra per point')
+    make_directories = Cpt(Signal, value=False,
+                           doc='Make directories on the DAQ side')
+
+    # XF:03IDC-ES{Xsp:1}           C1_   ...
+    # channel1 = Cpt(Xspress3Channel, 'C1_', channel_num=1)
+
+    data_key = XRF_DATA_KEY
+
+    def __init__(self, prefix, *, read_attrs=None, configuration_attrs=None,
+                 name=None, parent=None,
+                 # to remove?
+                 file_path='', ioc_file_path='', default_channels=None,
+                 channel_prefix=None,
+                 roi_sums=False,
+                 # to remove?
+                 **kwargs):
+
+        if read_attrs is None:
+            read_attrs = ['channel1', ]
+
+        if configuration_attrs is None:
+            configuration_attrs = ['channel1.rois', 'settings']
+
+        super().__init__(prefix, read_attrs=read_attrs,
+                         configuration_attrs=configuration_attrs,
+                         name=name, parent=parent, **kwargs)
+
+        # get all sub-device instances
+        sub_devices = {attr: getattr(self, attr)
+                       for attr in self._sub_devices}
+
+        # filter those sub-devices, just giving channels
+        channels = {dev.channel_num: dev
+                    for attr, dev in sub_devices.items()
+                    if isinstance(dev, Xspress3Channel)
+                    }
+
+        # make an ordered dictionary with the channels in order
+        self._channels = OrderedDict(sorted(channels.items()))
+
+    @property
+    def channels(self):
+        return self._channels.copy()
+
+    @property
+    def all_rois(self):
+        for ch_num, channel in self._channels.items():
+            for roi in channel.all_rois:
+                yield roi
+
+    @property
+    def enabled_rois(self):
+        for roi in self.all_rois:
+            if roi.enable.get():
+                yield roi
+
+    def read_hdf5(self, fn, *, rois=None, max_retries=2):
+        '''Read ROI data from an HDF5 file using the current ROI configuration
+
+        Parameters
+        ----------
+        fn : str
+            HDF5 filename to load
+        rois : sequence of Xspress3ROI instances, optional
+
         '''
-        if channels is None:
-            channels = self._det.default_channels
+        if rois is None:
+            rois = self.enabled_rois
 
-        for channel in channels:
-            roi_num = 1
-            while True:
-                if self.limit_rois and roi_num > self.num_roi:
-                    raise ValueError('Cannot add more ROIs than the EPICS '
-                                     'layer supports (limit_rois is enabled)')
+        num_points = self.settings.num_images.get()
+        if isinstance(fn, h5py.File):
+            hdf = fn
+        else:
+            hdf = h5py.File(fn, 'r')
 
-                try:
-                    self._roi_config[channel][roi_num]
-                except KeyError:
-                    self.set(channel, roi_num, ev_low, ev_high,
-                             name=self.get_roi_name(channel, name))
-                    break
+        RoiTuple = Xspress3ROI.get_device_tuple()
 
-                roi_num += 1
+        handler = Xspress3HDF5Handler(hdf, key=self.data_key)
+        for roi in self.enabled_rois:
+            roi_data = handler.get_roi(chan=roi.channel_num,
+                                       bin_low=roi.bin_low.get(),
+                                       bin_high=roi.bin_high.get(),
+                                       max_points=num_points)
+
+            roi_info = RoiTuple(bin_low=roi.bin_low.get(),
+                                bin_high=roi.bin_high.get(),
+                                ev_low=roi.ev_low.get(),
+                                ev_high=roi.ev_high.get(),
+                                value=roi_data,
+                                value_sum=None,
+                                enable=None)
+
+            yield roi.name, roi_info
+
+
+class XspressTrigger(BlueskyInterface):
+    """Base class for trigger mixin classes
+
+    Subclasses must define a method with this signature:
+
+    `acquire_changed(self, value=None, old_value=None, **kwargs)`
+    """
+    # TODO **
+    # count_time = self.settings.acquire_period
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # settings
+        self._status = None
+        self._acquisition_signal = self.settings.acquire
+        self._abs_trigger_count = 0
+
+    def stage(self):
+        self._abs_trigger_count = 0
+        self._acquisition_signal.subscribe(self._acquire_changed)
+        return super().stage()
+
+    def unstage(self):
+        ret = super().unstage()
+        self._acquisition_signal.clear_sub(self._acquire_changed)
+        return ret
+
+    def _acquire_changed(self, value=None, old_value=None, **kwargs):
+        "This is called when the 'acquire' signal changes."
+        if self._status is None:
+            return
+        if (old_value == 1) and (value == 0):
+            # Negative-going edge means an acquisition just finished.
+            self._status._finished()
+
+    def trigger(self):
+        if self._staged != Staged.yes:
+            raise RuntimeError("not staged")
+
+        self._status = DeviceStatus(self)
+        self.settings.erase.put(1)
+        self._acquisition_signal.put(1, wait=False)
+        self._abs_trigger_count += 1
+        trigger_time = ttime.time()
+
+        for sn in self.read_attrs:
+            if sn.startswith('channel'):
+                ch = getattr(self, sn)
+                self.dispatch(ch.name, trigger_time)
+        return self._status

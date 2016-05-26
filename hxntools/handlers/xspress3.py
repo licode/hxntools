@@ -4,7 +4,6 @@ import h5py
 import numpy as np
 import logging
 
-import filestore.api as fs_api
 from filestore.handlers import HandlerBase
 
 
@@ -59,19 +58,19 @@ class Xspress3HDF5Handler(HandlerBase):
             self._dataset = hdf_dataset
 
     def __del__(self):
-        self.close()
+        try:
+            self.close()
+        except Exception as ex:
+            logger.warning('Failed to close file',
+                           exc_info=ex)
 
     def __call__(self, frame=None, channel=None):
         # Don't read out the dataset until it is requested for the first time.
         self._get_dataset()
         return self._dataset[frame, channel - 1, :].squeeze()
 
-    def get_roi(self, roi_info, frame=None, max_points=None):
+    def get_roi(self, chan, bin_low, bin_high, *, frame=None, max_points=None):
         self._get_dataset()
-
-        chan = roi_info.chan
-        bin_low = roi_info.bin_low
-        bin_high = roi_info.bin_high
 
         roi = np.sum(self._dataset[:, chan - 1, bin_low:bin_high], axis=1)
         if max_points is not None:
@@ -89,5 +88,7 @@ class Xspress3HDF5Handler(HandlerBase):
         return '{0.__class__.__name__}(filename={0._filename!r})'.format(self)
 
 
-fs_api.register_handler(Xspress3HDF5Handler.HANDLER_NAME,
-                        Xspress3HDF5Handler)
+def register():
+    import filestore.api as fs_api
+    fs_api.register_handler(Xspress3HDF5Handler.HANDLER_NAME,
+                            Xspress3HDF5Handler)

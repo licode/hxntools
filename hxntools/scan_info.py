@@ -1,7 +1,10 @@
-import collections
-import numpy as np
-from databroker import DataBroker as db
 import logging
+import collections
+import functools
+import numpy as np
+import pandas as pd
+
+from databroker import (DataBroker as db, get_table as _get_table)
 
 
 logger = logging.getLogger(__name__)
@@ -24,19 +27,24 @@ def _eval(scan_args):
     return eval(scan_args, collections.defaultdict(no_op))
 
 
-step_1d = ('InnerProductAbsScan', 'HxnInnerAbsScan',
-           'InnerProductDeltaScan', 'HxnInnerDeltaScan',
-           'AbsScan', 'HxnAbsScan',
-           'DeltaScan', 'HxnDeltaScan')
+scan_types = dict(
+    v0=dict(step_1d=('InnerProductAbsScan', 'HxnInnerAbsScan',
+                     'InnerProductDeltaScan', 'HxnInnerDeltaScan', 'AbsScan',
+                     'HxnAbsScan', 'DeltaScan', 'HxnDeltaScan'),
+            step_2d=('OuterProductAbsScan', 'HxnOuterAbsScan', 'relative_mesh',
+                     'absolute_mesh'),
+            spiral=('HxnFermatPlan', 'relative_fermat', 'absolute_fermat',
+                    'relative_spiral', 'absolute_spiral'),
+            fly=('FlyPlan1D', 'FlyPlan2D'),
+            ),
+    v1=dict(fly=('FlyPlan1D', 'FlyPlan2D'),
+            # everything else can be done with plan_patterns
+            ),
+)
 
-step_2d = ('OuterProductAbsScan', 'HxnOuterAbsScan')
-fermat_scans = ('HxnFermatPlan', )
-fly_scans = ('FlyPlan1D', 'FlyPlan2D')
 
 
-def get_scan_info(header):
-    # TODO some of this can/should be redone with the new metadatastore
-    # fields (derived and otherwise)
+def _get_scan_info_bs_v0(header):
     info = {'num': 0,
             'dimensions': [],
             'motors': [],
@@ -48,10 +56,21 @@ def get_scan_info(header):
     try:
         scan_args = start_doc['scan_args']
     except KeyError:
-        logger.error('No scan args for scan %s', start_doc['uid'])
-        return info
+        try:
+            scan_args = start_doc['plan_args']
+        except KeyError:
+            logger.error('No scan args for scan %s', start_doc['uid'])
+            return info
 
-    scan_type = start_doc['scan_type']
+    try:
+        scan_type = start_doc['scan_type']
+    except KeyError:
+        try:
+            scan_type = start_doc['plan_type']
+        except KeyError:
+            logger.error('No plan type for scan %s', start_doc['uid'])
+            return info
+
     motors = None
     range_ = None
     pyramid = False
@@ -59,9 +78,19 @@ def get_scan_info(header):
     exposure_time = 0.0
     dimensions = []
 
+    scan_type_info = scan_types['v0']
+    step_1d = scan_type_info['step_1d']
+    step_2d = scan_type_info['step_2d']
+    spiral_scans = scan_type_info['spiral']
+    fly_scans = scan_type_info['fly']
+
     if scan_type in fly_scans:
         dimensions = start_doc['dimensions']
-        motors = start_doc['axes']
+        try:
+            motors = start_doc['motors']
+        except KeyError:
+            motors = start_doc['axes']
+
         pyramid = start_doc['fly_type'] == 'pyramid'
         exposure_time = float(scan_args.get('exposure_time', 0.0))
 
@@ -73,8 +102,8 @@ def get_scan_info(header):
             range_ = start_doc['scan_range']
         except KeyError:
             try:
-                range_ = [(float(scan_args['scan_start']),
-                           float(scan_args['scan_end']))]
+                range_ = [(float(start_doc['scan_start']),
+                           float(start_doc['scan_end']))]
             except (KeyError, ValueError):
                 pass
     elif scan_type in step_2d:
@@ -102,7 +131,7 @@ def get_scan_info(header):
             dimensions = []
             range_ = []
 
-    elif scan_type in fermat_scans:
+    elif scan_type in spiral_scans:
         motor_keys = ['x_motor', 'y_motor']
         dimensions = [int(start_doc['num'])]
         exposure_time = float(scan_args.get('exposure_time', 0.0))
@@ -151,6 +180,90 @@ def get_scan_info(header):
     return info
 
 
+def get_scan_info(header):
+    start_doc = header['start']
+    if 'scan_args' in start_doc:
+        return _get_scan_info_bs_v0(header)
+    elif 'plan_args' in start_doc:
+        return _get_scan_info_bs_v1(header)
+    else:
+        raise RuntimeError('Unknown start document information')
+
+
+def _get_scan_info_bs_v1(header):
+    start_doc = header['start']
+    info = {'num': 0,
+            'dimensions': [],
+            'motors': [],
+            'range': {},
+            'pyramid': False,
+            }
+
+    plan_type = start_doc['plan_type']
+    plan_name = start_doc['plan_name']
+
+    range_ = None
+    pyramid = False
+
+    plan_type_info = scan_types['v1']
+    fly_scans = plan_type_info['fly']
+
+    motors = start_doc['motors']
+
+    if plan_type in fly_scans:
+        logger.debug('Scan %s (%s) is a fly scan (%s %s)', start_doc.scan_id,
+                     start_doc.uid, plan_type, plan_name)
+        shape = start_doc['shape']
+        pyramid = start_doc['fly_type'] == 'pyramid'
+        range_ = dict(zip(motors, start_doc['scan_range']))
+    else:
+        try:
+            pattern_module = start_doc['plan_pattern_module']
+            pattern = start_doc['plan_pattern']
+            pattern_args = start_doc['plan_pattern_args']
+        except KeyError as ex:
+            msg = ('Unrecognized plan type/name (uid={} name={} type={}; '
+                   'missing key: {!r})'.format(start_doc.uid, plan_name,
+                                               plan_type, ex))
+            raise RuntimeError(msg)
+
+        module = __import__(pattern_module, fromlist=[''])
+        pattern_fcn = getattr(module, pattern)
+        logger.debug('Calling plan pattern function: %s with kwargs %s',
+                     pattern_fcn, pattern_args)
+        points = pattern_fcn(**pattern_args)
+
+        if isinstance(points, (list, np.ndarray)):
+            num = len(points)
+            range_ = {motors[0]: (np.min(points), np.max(points))}
+        else:
+            cyc = points
+            num = len(cyc)
+            try:
+                # cycler >= 0.10
+                positions = cyc.by_key()
+            except AttributeError:
+                positions = collections.defaultdict(lambda: [])
+                for pt in iter(cyc):
+                    for mtr, pos in pt.items():
+                        positions[mtr].append(pos)
+
+            range_ = {_eval(mtr).name: (np.min(positions[mtr]),
+                                        np.max(positions[mtr]))
+                      for mtr in cyc.keys}
+
+        shape = start_doc.get('shape', None)
+        if shape is None:
+            shape = [num]
+
+    info['num'] = np.product(shape)
+    info['dimensions'] = shape
+    info['motors'] = motors
+    info['range'] = range_
+    info['pyramid'] = pyramid
+    return info
+
+
 class ScanInfo(object):
     def __init__(self, header):
         self.header = header
@@ -188,5 +301,78 @@ class ScanInfo(object):
 
     def __iter__(self):
         if self.key:
-            for event in db.fetch_events(self.header, fill=False):
+            for event in db.get_events(self.header, fill=False,
+                                       name='primary'):
                 yield event['data'][self.key]
+
+
+def combine_tables_on_time(header, names, *, method='ffill', **kwargs):
+    '''Combine a fast-changing dataframe from databroker with one (or more)
+    slow-changing ones, given its header.
+
+    Parameters
+    ----------
+    header : Header
+    names : list
+        List of broker event stream names. The first will be taken as the
+        primary (and in fact should probably be 'primary')
+    method : {'ffill', 'bfill', 'nearest'}, optional
+        Reindexing method
+    **kwargs : dict, optional
+        Passed to metadatastore.get_table
+
+    Returns
+    -------
+    df : pd.DataFrame
+    '''
+    dfs = [_get_table(header, name=name, **kwargs)
+           for name in names]
+
+    primary_df = dfs[0]
+    primary_index = primary_df.index
+
+    try:
+        times = primary_df['time']
+    except KeyError:
+        return dfs[0]
+
+    dfs = ([primary_df] +
+           [other.set_index('time').reindex(times, method=method)
+            for other in dfs[1:]
+            if 'time' in other])
+
+    for df in dfs[1:]:
+        df.index = primary_index
+    return pd.concat(dfs, axis=1)
+
+
+@functools.wraps(_get_table)
+def get_combined_table(headers, name='primary', combine_table_names=None,
+                       **kwargs):
+    # Functions the same as get_table, but also combines ('primary' and
+    # 'motor2') when necessary (or whatever is in combine_table_names)
+
+    if combine_table_names is None:
+        if name == 'primary':
+            combine_table_names = ['primary', 'motor2']
+        else:
+            combine_table_names = []
+
+    if not combine_table_names:
+        return _get_table(headers, name=name, **kwargs)
+
+    try:
+        headers.items()
+    except AttributeError:
+        pass
+    else:
+        headers = [headers]
+
+    dfs = [combine_tables_on_time(header, names=combine_table_names, **kwargs)
+           for header in headers]
+
+    if dfs:
+        return pd.concat(dfs)
+    else:
+        # edge case: no data
+        return pd.DataFrame()

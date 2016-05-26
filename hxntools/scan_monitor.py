@@ -1,6 +1,6 @@
 import logging
 
-# from ophyd.controls import EpicsSignal
+# from ophyd import EpicsSignal
 from epics import PV
 from databroker import DataBroker
 from bluesky.utils import CallbackRegistry
