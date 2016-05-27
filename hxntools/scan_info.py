@@ -265,11 +265,16 @@ def _get_scan_info_bs_v1(header):
 
 
 class ScanInfo(object):
-    def __init__(self, header):
+    def __init__(self, header, stream='primary'):
         self.header = header
         self.start_doc = header['start']
         self.descriptors = header['descriptors']
         self.key = None
+
+        if 'scan_args' in self.start_doc and stream == 'primary':
+            stream = None
+
+        self.stream = stream
         for key, value in get_scan_info(self.header).items():
             logger.debug('Scan info %s=%s', key, value)
             setattr(self, key, value)
@@ -299,11 +304,17 @@ class ScanInfo(object):
     def __repr__(self):
         return '{}({})'.format(self.__class__.__name__, self.header)
 
-    def __iter__(self):
-        if self.key:
+    def iterate_over_stream(self, stream_name, fill=False, key=None, **kwargs):
+        if key is None:
+            key = self.key
+
+        if key:
             for event in db.get_events(self.header, fill=False,
-                                       name='primary'):
-                yield event['data'][self.key]
+                                       name=stream_name):
+                yield event['data'][key]
+
+    def __iter__(self):
+        yield from self.iterate_over_stream(self.stream, fill=False)
 
 
 def combine_tables_on_time(header, names, *, method='ffill', **kwargs):
