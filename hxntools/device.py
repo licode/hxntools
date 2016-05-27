@@ -2,28 +2,32 @@ from ophyd import Device
 
 
 def rename_device(dev, device_name, *,
-                  special_attribute='user_readback'):
+                  special_attributes=None):
     '''Rename a device
 
     Parameters
     ----------
     dev : Device
     device_name : str
-    special_attribute : str, optional
-        If the attribute name matches this, the component instance will be
-        named the same as the device.
+    special_attributes : str, optional
+        If the attribute name matches any of these, the component instance
+        will be named the same as the device.
+        Defaults to ('readback', 'user_readback')
     '''
     dev.name = device_name
 
     if not hasattr(dev, 'signal_names'):
         return
 
+    if special_attributes is None:
+        special_attributes = ('readback', 'user_readback')
+
     cls = dev.__class__
     for attribute in dev.signal_names:
         obj = getattr(dev, attribute)
         component_cls = getattr(cls, attribute)
 
-        if attribute == special_attribute:
+        if attribute in special_attributes:
             new_name = device_name
         else:
             new_name = component_cls.kwargs.get('name', attribute)
@@ -35,7 +39,7 @@ def rename_device(dev, device_name, *,
             rename_device(obj, new_name)
 
 
-def rename_sub_devices(dev, *, special_attribute='user_readback'):
+def rename_sub_devices(dev, *, special_attributes=None):
     '''Rename all sub-devices according to their keyword argument names'''
     cls = dev.__class__
 
@@ -46,7 +50,8 @@ def rename_sub_devices(dev, *, special_attribute='user_readback'):
 
         obj.name = new_name
         if isinstance(obj, Device):
-            rename_device(obj, new_name, special_attribute=special_attribute)
+            rename_device(obj, new_name,
+                          special_attributes=special_attributes)
 
 
 class NamedDevice(Device):
