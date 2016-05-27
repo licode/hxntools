@@ -37,7 +37,7 @@ scan_types = dict(
                     'relative_spiral', 'absolute_spiral'),
             fly=('FlyPlan1D', 'FlyPlan2D'),
             ),
-    v1=dict(fly=('FlyPlan1D', 'FlyPlan2D'),
+    v1=dict(fly=('FlyPlan1D', 'FlyPlan2D', 'FlyStep1D'),
             # everything else can be done with plan_patterns
             ),
 )
