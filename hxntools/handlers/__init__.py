@@ -1,3 +1,5 @@
+from __future__ import absolute_import
+
 from .xspress3 import Xspress3HDF5Handler
 from .timepix import TimepixHDF5Handler
 
