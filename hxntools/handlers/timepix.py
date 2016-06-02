@@ -20,8 +20,9 @@ class TimepixHDF5Handler(HDF5DatasetSliceHandler):
     hardcoded_key = '/entry/instrument/detector/data'
 
     def __init__(self, filename, frame_per_point=1):
-        super().__init__(filename=filename, key=self.hardcoded_key,
-                         frame_per_point=frame_per_point)
+        super(TimepixHDF5Handler, self).__init__(
+                filename=filename, key=self.hardcoded_key,
+                frame_per_point=frame_per_point)
 
 
 def register():
