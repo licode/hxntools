@@ -107,8 +107,9 @@ class HxnMerlinDetector(HxnModalTrigger, MerlinDetector):
         super().mode_internal()
 
         count_time = self.count_time.get()
-        self.stage_sigs[self.cam.acquire_time] = count_time
-        self.stage_sigs[self.cam.acquire_period] = count_time + 0.005
+        if count_time is not None:
+            self.stage_sigs[self.cam.acquire_time] = count_time
+            self.stage_sigs[self.cam.acquire_period] = count_time + 0.005
 
     def mode_external(self):
         super().mode_external()
