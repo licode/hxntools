@@ -37,8 +37,9 @@ class Xspress3HDF5Handler(HandlerBase):
 
     def close(self):
         super(Xspress3HDF5Handler, self).close()
-        self._file.close()
-        self._file = None
+        if self._file is not None:
+            self._file.close()
+            self._file = None
         self._dataset = None
 
     @property
