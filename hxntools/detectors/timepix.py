@@ -6,7 +6,7 @@ from ophyd.areadetector.filestore_mixins import (FileStoreIterativeWrite,
                                                  FileStorePluginBase,
                                                  )
 from ophyd import (Device, Component as Cpt, AreaDetector, TIFFPlugin,
-                   HDF5Plugin, StatsPlugin)
+                   HDF5Plugin, StatsPlugin, ProcessPlugin)
 from ophyd import (EpicsSignal, EpicsSignalRO)
 from ophyd.areadetector import (EpicsSignalWithRBV as SignalWithRBV, CamBase)
 from .utils import makedirs
@@ -152,6 +152,7 @@ class HxnTimepixDetector(TimepixDetector):
                configuration_attrs=[],
                write_path_template='/data/%Y/%m/%d/')
 
+    proc1 = Cpt(ProcessPlugin, 'Proc1:')
     stats1 = Cpt(StatsPlugin, 'Stats1:')
     stats2 = Cpt(StatsPlugin, 'Stats2:')
     stats3 = Cpt(StatsPlugin, 'Stats3:')
@@ -180,3 +181,30 @@ class HxnTimepixDetector(TimepixDetector):
         # signal aliases?
         self.total_points = self.mode_settings.total_points
         self.make_directories = self.mode_settings.make_directories
+
+    def mode_internal(self):
+        super().mode_internal()
+
+        num_exposures = self.cam.num_exposures.get()
+        cam = self.cam
+        proc1 = self.proc1
+        hdf5 = self.hdf5
+
+        if num_exposures <= 1:
+            cam.stage_sigs[cam.image_mode] = 'Single'
+            hdf5.stage_sigs[hdf5.nd_array_port] = cam.port_name.get()
+        else:
+            # multiple exposures isn't supported by the timepix driver :(
+            # use the process plugin to sum the images
+            cam.stage_sigs[cam.image_mode] = 'Multiple'
+            cam.stage_sigs[cam.num_images] = num_exposures
+            hdf5.stage_sigs[hdf5.nd_array_port] = proc1.port_name.get()
+            proc1.stage_sigs[proc1.num_filter] = num_exposures
+            proc1.stage_sigs[proc1.reset_filter] = 'Yes'
+            proc1.stage_sigs[proc1.auto_reset_filter] = 'Yes'
+            proc1.stage_sigs[proc1.enable_filter] = 'Enable'
+            proc1.stage_sigs[proc1.filter_type] = 'Sum'
+            proc1.stage_sigs[proc1.filter_callbacks] = 'Array N only'
+
+        proc1.stage_sigs[proc1.blocking_callbacks] = 'Yes'
+        hdf5.stage_sigs[hdf5.blocking_callbacks] = 'Yes'
