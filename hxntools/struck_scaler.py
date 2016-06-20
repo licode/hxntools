@@ -125,7 +125,9 @@ class HxnTriggeringScaler(HxnModalBase, StruckScaler):
                                  self.start_all,
                                  self.input_mode,
                                  self.channel_advance,
-                                 self.nuse_all]
+                                 self.nuse_all,
+                                 self.preset_real,
+                                 self.dwell]
 
     def mode_internal(self):
         super().mode_internal()
@@ -142,11 +144,18 @@ class HxnTriggeringScaler(HxnModalBase, StruckScaler):
         triggers = self.scan_type_triggers[scan_type]
         settings.triggers.put(list(triggers))
 
+        self.stop_all.put(1, wait=True)
+        self.count.put(0, wait=True)
         self.stage_sigs[self.preset_time] = self.count_time.get()
 
     def mode_external(self):
         super().mode_external()
 
+        if self.preset_time in self.stage_sigs:
+            self.stage_sigs.remove(self.preset_time)
+
+        self.stage_sigs[self.preset_real] = 0.0
+        self.stage_sigs[self.dwell] = 0.0
         self.stage_sigs[self.channel_advance] = 'External'
         self.stage_sigs[self.input_mode] = 'Mode 2'
         self.stage_sigs[self.nuse_all] = self.mode_settings.total_points.get()
