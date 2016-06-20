@@ -5,6 +5,7 @@ import uuid
 import itertools
 import logging
 import time
+import numpy as np
 
 from ophyd import (Component as Cpt, Signal)
 from ophyd.status import DeviceStatus
@@ -12,7 +13,8 @@ from ophyd.device import (BlueskyInterface, Staged)
 from ophyd.utils import set_and_wait
 
 from filestore.api import bulk_insert_datum
-from .xspress3 import (XspressTrigger, Xspress3Detector, Xspress3FileStore)
+from .xspress3 import (XspressTrigger, Xspress3Detector, Xspress3FileStore,
+                       Xspress3ROI)
 from .trigger_mixins import HxnModalBase
 
 
@@ -146,12 +148,49 @@ class HxnXspress3DetectorBase(HxnXspressTrigger, Xspress3Detector):
         return OrderedDict((self.hdf5.mds_keys[ch], ch_uids[ch])
                            for ch in channels)
 
-    def fly_collect_rois(self):
-        # Purposefully try reading the hdf5 file *AFTER* inserting the spectra
-        # entries to filestore:
-        hdf5 = self.hdf5._fn
-        for name, roi_data in self.read_hdf5(hdf5):
-            yield (name, roi_data)
+    def fly_collect_rois(self, rois=None, *, ignore_get_failures=True):
+        '''Read ROI data from the PVs
+
+        Parameters
+        ----------
+        rois : sequence of Xspress3ROI instances, optional
+            If unspecified, uses all currently enabled ROIs
+        ignore_get_failures : bool, optional
+            Ignore pyepics-related failures - will
+        '''
+        if rois is None:
+            rois = self.enabled_rois
+
+        num_points = self.settings.num_images.get()
+        RoiTuple = Xspress3ROI.get_device_tuple()
+
+        for roi in self.enabled_rois:
+            try:
+                roi_data = roi.settings.array_data.get(count=num_points,
+                                                       use_monitor=False)
+            except Exception as ex:
+                logger.error('Failed to get ROI data', exc_info=ex)
+                if not ignore_get_failures:
+                    raise
+                roi_data = np.zeros(num_points)
+
+            try:
+                roi_data = roi_data[:num_points]
+            except TypeError as ex:
+                logger.error('Failed to get ROI data', exc_info=ex)
+                if not ignore_get_failures:
+                    raise
+                roi_data = np.zeros(num_points)
+
+            roi_info = RoiTuple(bin_low=roi.bin_low.get(),
+                                bin_high=roi.bin_high.get(),
+                                ev_low=roi.ev_low.get(),
+                                ev_high=roi.ev_high.get(),
+                                value=roi_data,
+                                value_sum=None,
+                                enable=roi.enable.get())
+
+            yield roi.name, roi_info
 
     def stop(self):
         super().stop()
