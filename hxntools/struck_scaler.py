@@ -152,7 +152,7 @@ class HxnTriggeringScaler(HxnModalBase, StruckScaler):
         super().mode_external()
 
         if self.preset_time in self.stage_sigs:
-            self.stage_sigs.remove(self.preset_time)
+            del self.stage_sigs[self.preset_time]
 
         self.stage_sigs[self.preset_real] = 0.0
         self.stage_sigs[self.dwell] = 0.0
