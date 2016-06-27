@@ -201,3 +201,28 @@ def relative_mesh(*args, time=None, md=None):
     plan = absolute_mesh(*args, time=time, md=md)
     plan = plans.relative_set(plan)  # re-write trajectory as relative
     yield from plans.reset_positions(plan)
+
+
+def _get_a2_args(*args, time=None):
+    if (len(args) % 3) == 2:
+        if time is not None:
+            raise ValueError('Wrong number of positional arguments')
+        args, time = args[:-1], args[-1]
+
+    return args, time
+
+
+@functools.wraps(spec_api.a2scan)
+def a2scan(*args, time=None, md=None):
+    args, time = _get_a2_args(*args, time=time)
+    total_points = int(args[-1])
+    yield from _pre_scan(total_points=total_points, count_time=time)
+    yield from spec_api.a2scan(*args, time=time, md=md)
+
+
+@functools.wraps(spec_api.d2scan)
+def d2scan(*args, time=None, md=None):
+    args, time = _get_a2_args(*args, time=time)
+    total_points = int(args[-1])
+    yield from _pre_scan(total_points=total_points, count_time=time)
+    yield from spec_api.d2scan(*args, time=time, md=md)
