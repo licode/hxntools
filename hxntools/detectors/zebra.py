@@ -16,6 +16,11 @@ def _get_configuration_attrs(cls, *, signal_class=Signal):
             if issubclass(getattr(cls, sig_name).cls, signal_class)]
 
 
+class ZebraInputEdge(IntEnum):
+    FALLING = 1
+    RISING = 0
+
+
 class ZebraAddresses(IntEnum):
     DISCONNECT = 0
     IN1_TTL = 1
@@ -333,22 +338,30 @@ class HxnZebra(Zebra):
 
         scan_type = self.mode_settings.scan_type.get()
         if scan_type == 'fly':
+            # PMAC motion script outputs 0 during exposure
+            # * Gate 1 - active high devices (high during exposure)
             self.gate[1].input1.addr.put(ZebraAddresses.IN3_OC)
             self.gate[1].input2.addr.put(ZebraAddresses.IN3_OC)
-            self.gate[1].set_input_edges(1, 0)
+            self.gate[1].set_input_edges(ZebraInputEdge.FALLING,
+                                         ZebraInputEdge.RISING)
 
-            # timepix:
-            # self.output[1].ttl = self.GATE1
-            # merlin:
-            # (Merlin is now on TTL 1 output, replacing timepix 1)
-            self.output[1].ttl.addr.put(ZebraAddresses.GATE2)
+            # Output 1 - timepix (OR merlin, see below)
+            # self.output[1].ttl.addr.put(ZebraAddresses.GATE1)
+
+            # Output 2 - scaler 1 inhibit
             self.output[2].ttl.addr.put(ZebraAddresses.GATE1)
 
+            # * Gate 2 - Active low (low during exposure)
             self.gate[2].input1.addr.put(ZebraAddresses.IN3_OC)
             self.gate[2].input2.addr.put(ZebraAddresses.IN3_OC)
-            self.gate[2].set_input_edges(0, 1)
+            self.gate[2].set_input_edges(ZebraInputEdge.RISING,
+                                         ZebraInputEdge.FALLING)
 
+            # Output 1 - merlin and dexela
+            self.output[1].ttl.addr.put(ZebraAddresses.GATE2)
+            # Output 3 - scaler 1 gate
             self.output[3].ttl.addr.put(ZebraAddresses.GATE2)
+            # Output 4 - xspress 3
             self.output[4].ttl.addr.put(ZebraAddresses.GATE2)
 
             # Merlin LVDS
@@ -373,21 +386,22 @@ class HxnZebra(Zebra):
                 self.pulse[1].time_units.put('s')
 
             self.pulse[1].delay.put(0.0)
-            self.pulse[1].input_edge.put(1)
+            self.pulse[1].input_edge.put(ZebraInputEdge.FALLING)
 
             # To be used in regular scaler mode, scaler 1 has to have
             # inhibit cleared and counting enabled:
             self.soft_input4.put(1)
 
             # Timepix
-            # self.output[1].ttl = self.PULSE1
+            # self.output[1].ttl.addr.put(ZebraAddresses.PULSE1)
             # Merlin
             self.output[1].ttl.addr.put(ZebraAddresses.PULSE1)
             self.output[2].ttl.addr.put(ZebraAddresses.SOFT_IN4)
 
             self.gate[2].input1.addr.put(ZebraAddresses.PULSE1)
             self.gate[2].input2.addr.put(ZebraAddresses.PULSE1)
-            self.gate[2].set_input_edges(0, 1)
+            self.gate[2].set_input_edges(ZebraInputEdge.RISING,
+                                         ZebraInputEdge.FALLING)
 
             self.output[3].ttl.addr.put(ZebraAddresses.SOFT_IN4)
             self.output[4].ttl.addr.put(ZebraAddresses.GATE2)
