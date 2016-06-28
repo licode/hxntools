@@ -339,7 +339,7 @@ class HxnZebra(Zebra):
         scan_type = self.mode_settings.scan_type.get()
         if scan_type == 'fly':
             # PMAC motion script outputs 0 during exposure
-            # * Gate 1 - active high devices (high during exposure)
+            # * Gate 1 - active low devices (low during exposure)
             self.gate[1].input1.addr.put(ZebraAddresses.IN3_OC)
             self.gate[1].input2.addr.put(ZebraAddresses.IN3_OC)
             self.gate[1].set_input_edges(ZebraInputEdge.FALLING,
@@ -351,7 +351,7 @@ class HxnZebra(Zebra):
             # Output 2 - scaler 1 inhibit
             self.output[2].ttl.addr.put(ZebraAddresses.GATE1)
 
-            # * Gate 2 - Active low (low during exposure)
+            # * Gate 2 - Active high (high during exposure)
             self.gate[2].input1.addr.put(ZebraAddresses.IN3_OC)
             self.gate[2].input2.addr.put(ZebraAddresses.IN3_OC)
             self.gate[2].set_input_edges(ZebraInputEdge.RISING,
