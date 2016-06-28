@@ -108,13 +108,13 @@ class HxnDexelaDetector(HxnModalTrigger, DexelaDetector):
     hdf5 = Cpt(HDF5PluginWithFileStore, 'HDF1:',
                read_attrs=[],
                configuration_attrs=[],
-               write_path_template='Z:/%Y/%m/%d/',
+               write_path_template='Z:\\%Y\\%m\\%d\\',
                read_path_template='/data/%Y/%m/%d/')
 
     # tiff1 = Cpt(DexelaTiffPlugin, 'TIFF1:',
     #             read_attrs=[],
     #             configuration_attrs=[],
-    #             write_path_template='Z:/%Y/%m/%d/',
+    #             write_path_template='Z:\\%Y\\%m\\%d\\',
     #             read_path_template='/data/%Y/%m/%d/')
 
     def __init__(self, prefix, *, read_attrs=None, configuration_attrs=None,
