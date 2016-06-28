@@ -139,7 +139,7 @@ class HxnDexelaDetector(HxnModalTrigger, DexelaDetector):
             self.stage_sigs[self.cam.acquire_time] = count_time
             self.stage_sigs[self.cam.acquire_period] = count_time + 0.005
 
-        self.stage_sigs[self.cam.trigger_mode] = 'Int. Fixed Rate'
+        self.cam.stage_sigs[self.cam.trigger_mode] = 'Int. Fixed Rate'
 
     def mode_external(self):
         super().mode_external()
@@ -152,4 +152,4 @@ class HxnDexelaDetector(HxnModalTrigger, DexelaDetector):
         self.stage_sigs[self.cam.acquire_time] = 0.005
         self.stage_sigs[self.cam.acquire_period] = 0.060
 
-        self.stage_sigs[self.cam.trigger_mode] = 'Ext. Edge Single'
+        self.cam.stage_sigs[self.cam.trigger_mode] = 'Ext. Edge Single'
