@@ -372,7 +372,7 @@ class HxnZebra(Zebra):
             # Scaler, output mode 1, LNE (output 5) connected to Zebra IN1_TTL
             # Pulse 1 has pulse width set to the count_time
 
-            # OUT1_TTL Merlin
+            # OUT1_TTL Merlin / dexela
             # OUT2_TTL Scaler 1 inhibit
             #
             # OUT3_TTL Scaler 1 gate

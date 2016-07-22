@@ -152,4 +152,4 @@ class HxnDexelaDetector(HxnModalTrigger, DexelaDetector):
         self.stage_sigs[self.cam.acquire_time] = 0.005
         self.stage_sigs[self.cam.acquire_period] = 0.060
 
-        self.cam.stage_sigs[self.cam.trigger_mode] = 'Ext. Edge Single'
+        self.cam.stage_sigs[self.cam.trigger_mode] = 'Ext. Bulb'
