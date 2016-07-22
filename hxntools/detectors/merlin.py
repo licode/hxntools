@@ -2,7 +2,7 @@ from __future__ import print_function
 import logging
 
 from ophyd import (AreaDetector, CamBase, TIFFPlugin, Component as Cpt,
-                   HDF5Plugin, Device)
+                   HDF5Plugin, Device, StatsPlugin, ProcessPlugin)
 from ophyd.areadetector.filestore_mixins import (
     FileStoreIterativeWrite, FileStoreTIFF, FileStorePluginBase)
 
@@ -83,6 +83,13 @@ class HxnMerlinDetector(HxnModalTrigger, MerlinDetector):
                read_attrs=[],
                configuration_attrs=[],
                write_path_template='/data/%Y/%m/%d/')
+
+    proc1 = Cpt(ProcessPlugin, 'Proc1:')
+    stats1 = Cpt(StatsPlugin, 'Stats1:')
+    stats2 = Cpt(StatsPlugin, 'Stats2:')
+    stats3 = Cpt(StatsPlugin, 'Stats3:')
+    stats4 = Cpt(StatsPlugin, 'Stats4:')
+    stats5 = Cpt(StatsPlugin, 'Stats5:')
 
     # tiff1 = Cpt(MerlinTiffPlugin, 'TIFF1:',
     #             read_attrs=[],
