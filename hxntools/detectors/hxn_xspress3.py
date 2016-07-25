@@ -8,6 +8,7 @@ import time
 import numpy as np
 
 from ophyd import (Component as Cpt, Signal)
+from ophyd.areadetector.plugins import PluginBase
 from ophyd.status import DeviceStatus
 from ophyd.device import (BlueskyInterface, Staged)
 from ophyd.utils import set_and_wait
@@ -104,6 +105,7 @@ class HxnXspressTrigger(HxnModalBase, BlueskyInterface):
 
 
 class HxnXspress3DetectorBase(HxnXspressTrigger, Xspress3Detector):
+    roi_data = Cpt(PluginBase, 'ROIDATA:')
     flyer_timestamps = Cpt(Signal)
 
     @property

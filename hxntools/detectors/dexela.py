@@ -2,7 +2,9 @@ from __future__ import print_function
 import logging
 
 from ophyd import (AreaDetector, CamBase, TIFFPlugin, Component as Cpt,
-                   HDF5Plugin, Device, EpicsSignal)
+                   HDF5Plugin, Device, StatsPlugin, ProcessPlugin,
+                   ROIPlugin, EpicsSignal)
+from ophyd.areadetector.plugins import PluginBase
 from ophyd.areadetector import (EpicsSignalWithRBV as SignalWithRBV)
 from ophyd.areadetector.filestore_mixins import (
     FileStoreIterativeWrite, FileStoreTIFF, FileStorePluginBase)
@@ -104,6 +106,19 @@ class HDF5PluginWithFileStore(HDF5Plugin, DexelaFileStoreHDF5):
         return super().stage()
 
 
+class TransformPluginV2(PluginBase):
+    '''TODO/NOTE: transform plugin from R2-4 wipes away all old records
+
+    https://github.com/areaDetector/ADCore/commit/b39ddac4a4a8d14997b94052e45ce47d72ec3ae8
+    '''
+    _default_suffix = 'Trans1:'
+    _suffix_re = 'Trans\d:'
+    _html_docs = ['NDPluginTransform.html']
+    _plugin_type = 'NDPluginTransform'
+
+    type_ = Cpt(EpicsSignal, 'Type')
+
+
 class HxnDexelaDetector(HxnModalTrigger, DexelaDetector):
     hdf5 = Cpt(HDF5PluginWithFileStore, 'HDF1:',
                read_attrs=[],
@@ -116,6 +131,18 @@ class HxnDexelaDetector(HxnModalTrigger, DexelaDetector):
     #             configuration_attrs=[],
     #             write_path_template='Z:\\%Y\\%m\\%d\\',
     #             read_path_template='/data/%Y/%m/%d/')
+
+    proc1 = Cpt(ProcessPlugin, 'Proc1:')
+    stats1 = Cpt(StatsPlugin, 'Stats1:')
+    stats2 = Cpt(StatsPlugin, 'Stats2:')
+    stats3 = Cpt(StatsPlugin, 'Stats3:')
+    stats4 = Cpt(StatsPlugin, 'Stats4:')
+    stats5 = Cpt(StatsPlugin, 'Stats5:')
+    transform1 = Cpt(TransformPluginV2, 'Trans1:')
+    roi1 = Cpt(ROIPlugin, 'ROI1:')
+    roi2 = Cpt(ROIPlugin, 'ROI2:')
+    roi3 = Cpt(ROIPlugin, 'ROI3:')
+    roi4 = Cpt(ROIPlugin, 'ROI4:')
 
     def __init__(self, prefix, *, read_attrs=None, configuration_attrs=None,
                  **kwargs):

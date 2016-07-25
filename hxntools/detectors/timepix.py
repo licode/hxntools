@@ -6,7 +6,8 @@ from ophyd.areadetector.filestore_mixins import (FileStoreIterativeWrite,
                                                  FileStorePluginBase,
                                                  )
 from ophyd import (Device, Component as Cpt, AreaDetector, TIFFPlugin,
-                   HDF5Plugin, StatsPlugin, ProcessPlugin)
+                   HDF5Plugin, StatsPlugin, ProcessPlugin, ROIPlugin,
+                   TransformPlugin)
 from ophyd import (EpicsSignal, EpicsSignalRO)
 from ophyd.areadetector import (EpicsSignalWithRBV as SignalWithRBV, CamBase)
 from .utils import makedirs
@@ -158,6 +159,11 @@ class HxnTimepixDetector(TimepixDetector):
     stats3 = Cpt(StatsPlugin, 'Stats3:')
     stats4 = Cpt(StatsPlugin, 'Stats4:')
     stats5 = Cpt(StatsPlugin, 'Stats5:')
+    transform1 = Cpt(TransformPlugin, 'Trans1:')
+    roi1 = Cpt(ROIPlugin, 'ROI1:')
+    roi2 = Cpt(ROIPlugin, 'ROI2:')
+    roi3 = Cpt(ROIPlugin, 'ROI3:')
+    roi4 = Cpt(ROIPlugin, 'ROI4:')
 
     # tiff1 = Cpt(TimepixTiffPlugin, 'TIFF1:',
     #             read_attrs=[],
