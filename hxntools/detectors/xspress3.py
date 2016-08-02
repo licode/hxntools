@@ -490,6 +490,8 @@ class Xspress3Detector(DetectorBase):
                             doc='Number of spectra per point')
     make_directories = Cpt(Signal, value=False,
                            doc='Make directories on the DAQ side')
+    rewindable = Cpt(Signal, value=False,
+                     doc='Xspress3 cannot safely be rewound in bluesky')
 
     # XF:03IDC-ES{Xsp:1}           C1_   ...
     # channel1 = Cpt(Xspress3Channel, 'C1_', channel_num=1)
