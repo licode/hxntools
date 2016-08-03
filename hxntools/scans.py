@@ -2,6 +2,7 @@ import asyncio
 import functools
 import logging
 
+from cycler import cycler
 from boltons.iterutils import chunked
 
 from bluesky import (plans, spec_api, Msg)
@@ -226,3 +227,54 @@ def d2scan(*args, time=None, md=None):
     total_points = int(args[-1])
     yield from _pre_scan(total_points=total_points, count_time=time)
     yield from spec_api.d2scan(*args, time=time, md=md)
+
+
+def scan_steps(*args, time=None, per_step=None, md=None):
+    '''
+    Absolute scan over an arbitrary N-dimensional trajectory.
+
+    Parameters
+    ----------
+    ``*args`` : {Positioner, list/sequence}
+        Patterned like
+            (``motor1, motor1_positions, ..., motorN, motorN_positions``)
+        Where motorN_positions is a list/tuple/sequence of absolute positions
+        for motorN to go to.
+    time : float, optional
+        applied to any detectors that have a `count_time` setting
+    per_step : callable, optional
+        hook for cutomizing action of inner loop (messages per step)
+        See docstring of bluesky.plans.one_nd_step (the default) for
+        details.
+    md : dict, optional
+        metadata
+    '''
+    if len(args) % 2 == 1:
+        if time is not None:
+            raise ValueError('Wrong number of positional arguments')
+        args, time = args[:-1], args[-1]
+
+    cyclers = [cycler(motor, steps) for motor, steps in chunked(args, 2)]
+    cyc = sum(cyclers[1:], cyclers[0])
+    motors = list(cyc.keys)
+    total_points = len(cyc)
+
+    if md is None:
+        md = {}
+
+    from collections import ChainMap
+    from bluesky.callbacks import LiveTable
+
+    gs = get_gs()
+    md = ChainMap(md, {'plan_name': 'scan_steps',
+                       gs.MD_TIME_KEY: time})
+
+    # TODO this will be refactored very soon in upstream bluesky
+    subs = {'all': [LiveTable(motors + [gs.PLOT_Y] + gs.TABLE_COLS), ]}
+    plan = plans.scan_nd(gs.DETS, cyc, md=md, per_step=per_step)
+    plan = plans.baseline_wrapper(plan, motors + gs.BASELINE_DEVICES)
+    plan = plans.configure_count_time_wrapper(plan, time)
+    plan = plans.subs_wrapper(plan, subs)
+
+    yield from _pre_scan(total_points=total_points, count_time=time)
+    yield from plans.reset_positions_wrapper(plan)
