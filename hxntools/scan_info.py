@@ -310,7 +310,7 @@ class ScanInfo(object):
 
         if key:
             for event in db.get_events(self.header, fill=False,
-                                       name=stream_name):
+                                       stream_name=stream_name):
                 yield event['data'][key]
 
     def __iter__(self):
