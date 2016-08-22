@@ -139,7 +139,7 @@ def absolute_fermat(x_motor, y_motor, x_start, y_start, x_range, y_range, dr,
     yield from _pre_scan(total_points=total_points, count_time=time)
     yield from spec_api.afermat(x_motor, y_motor, x_start, y_start, x_range,
                                 y_range, dr, factor, time=time,
-                                per_step=per_step, md=md)
+                                per_step=per_step, md=md, tilt=tilt)
 
 
 @functools.wraps(spec_api.fermat)
@@ -152,7 +152,7 @@ def relative_fermat(x_motor, y_motor, x_range, y_range, dr, factor, time=None,
 
     yield from _pre_scan(total_points=total_points, count_time=time)
     yield from spec_api.fermat(x_motor, y_motor, x_range, y_range, dr, factor,
-                               time=time, per_step=per_step, md=md)
+                               time=time, per_step=per_step, md=md, tilt=tilt)
 
 
 @functools.wraps(spec_api.aspiral)
@@ -166,7 +166,7 @@ def absolute_spiral(x_motor, y_motor, x_start, y_start, x_range, y_range, dr,
     yield from _pre_scan(total_points=total_points, count_time=time)
     yield from spec_api.aspiral(x_motor, y_motor, x_start, y_start, x_range,
                                 y_range, dr, nth, time=time,
-                                per_step=per_step, md=md)
+                                per_step=per_step, md=md, tilt=tilt)
 
 
 @functools.wraps(spec_api.spiral)
@@ -179,7 +179,7 @@ def relative_spiral(x_motor, y_motor, x_range, y_range, dr, nth, time=None,
 
     yield from _pre_scan(total_points=total_points, count_time=time)
     yield from spec_api.spiral(x_motor, y_motor, x_range, y_range, dr, nth,
-                               time=time, per_step=per_step, md=md)
+                               time=time, per_step=per_step, md=md, tilt=tilt)
 
 
 @functools.wraps(spec_api.mesh)
