@@ -27,12 +27,11 @@ class Xspress3HDF5Handler(HandlerBase):
         self._key = key
         self._dataset = None
 
-        self.open()
+        #self.open()
 
     def open(self):
         if self._file:
             return
-
         self._file = h5py.File(self._filename, 'r')
 
     def close(self):
@@ -49,17 +48,12 @@ class Xspress3HDF5Handler(HandlerBase):
     def _get_dataset(self):
         if self._dataset is not None:
             return
-
-        hdf_dataset = self._file[self._key]
-        try:
-            self._dataset = np.asarray(hdf_dataset)
-        except MemoryError as ex:
-            logger.warning('Unable to load the full dataset into memory',
-                           exc_info=ex)
-            self._dataset = hdf_dataset
+        with h5py.File(self._filename, 'r') as self._file:
+            hdf_dataset = self._file[self._key][:]
 
     def __del__(self):
         try:
+            del self._dataset
             self.close()
         except Exception as ex:
             logger.warning('Failed to close file',
@@ -68,7 +62,7 @@ class Xspress3HDF5Handler(HandlerBase):
     def __call__(self, frame=None, channel=None):
         # Don't read out the dataset until it is requested for the first time.
         self._get_dataset()
-        return self._dataset[frame, channel - 1, :].squeeze()
+        return self._dataset[frame, channel - 1, :]
 
     def get_roi(self, chan, bin_low, bin_high, frame=None, max_points=None):
         self._get_dataset()
