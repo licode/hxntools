@@ -18,7 +18,7 @@ setup(
     name='hxntools',
     version="0.0.1",
     author='Brookhaven National Laboratory',
-    packages=['hxntools', 'hxntools.detectors'],
+    packages=['hxntools', 'hxntools.detectors', 'hxntools.handlers'],
     install_requires=['numpy>=1.8',
                       'h5py>=2.5.0', 'filestore>=0.0.4'],
 
