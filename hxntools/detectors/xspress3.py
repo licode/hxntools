@@ -290,7 +290,7 @@ class Xspress3DetectorSettings(CamBase):
     restore_settings = Cpt(EpicsSignal, 'RESTORE_SETTINGS')
     run_flags = Cpt(SignalWithRBV, 'RUN_FLAGS')
     save_settings = Cpt(EpicsSignal, 'SAVE_SETTINGS')
-    trigger = Cpt(EpicsSignal, 'TRIGGER')
+    trigger_signal = Cpt(EpicsSignal, 'TRIGGER')
     # update = Cpt(EpicsSignal, 'UPDATE')
     # update_attr = Cpt(EpicsSignal, 'UPDATE_AttrUpdate')
 
