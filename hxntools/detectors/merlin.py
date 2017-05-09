@@ -84,7 +84,8 @@ class HxnMerlinDetector(HxnModalTrigger, MerlinDetector):
     hdf5 = Cpt(HDF5PluginWithFileStore, 'HDF1:',
                read_attrs=[],
                configuration_attrs=[],
-               write_path_template='/data/%Y/%m/%d/')
+               write_path_template='/data/%Y/%m/%d/',
+               root='/data')
 
     proc1 = Cpt(ProcessPlugin, 'Proc1:')
     stats1 = Cpt(StatsPlugin, 'Stats1:')
@@ -101,7 +102,8 @@ class HxnMerlinDetector(HxnModalTrigger, MerlinDetector):
     # tiff1 = Cpt(MerlinTiffPlugin, 'TIFF1:',
     #             read_attrs=[],
     #             configuration_attrs=[],
-    #             write_path_template='/data/%Y/%m/%d/')
+    #             write_path_template='/data/%Y/%m/%d/',
+    #             root='/data')
 
     def __init__(self, prefix, *, read_attrs=None, configuration_attrs=None,
                  **kwargs):
