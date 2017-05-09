@@ -153,7 +153,8 @@ class HxnTimepixDetector(TimepixDetector):
     hdf5 = Cpt(HDF5PluginWithFileStore, 'HDF1:',
                read_attrs=[],
                configuration_attrs=[],
-               write_path_template='/data/%Y/%m/%d/')
+               write_path_template='/data/%Y/%m/%d/',
+               root='/data')
 
     proc1 = Cpt(ProcessPlugin, 'Proc1:')
     stats1 = Cpt(StatsPlugin, 'Stats1:')
@@ -170,7 +171,8 @@ class HxnTimepixDetector(TimepixDetector):
     # tiff1 = Cpt(TimepixTiffPlugin, 'TIFF1:',
     #             read_attrs=[],
     #             configuration_attrs=[],
-    #             write_path_template='/data/%Y/%m/%d/')
+    #             write_path_template='/data/%Y/%m/%d/',
+    #             root='/data')
 
     def __init__(self, prefix, *, read_attrs=None, configuration_attrs=None,
                  **kwargs):
