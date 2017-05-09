@@ -5,7 +5,7 @@ import logging
 import itertools
 import uuid
 
-import filestore.api as fs_api
+from pathlib import PurePath
 from filestore.api import bulk_insert_datum
 from .utils import makedirs
 
@@ -210,8 +210,10 @@ class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
                           .format(self.file_path.value))
 
         logger.debug('Inserting the filestore resource: %s', self._fn)
-        self._filestore_res = fs_api.insert_resource(
-            Xspress3HDF5Handler.HANDLER_NAME, self._fn, {})
+        fn = PurePath(self._fn).relative_to(self.root)
+        self._resource = self._fs.insert_resource(
+            Xspress3HDF5Handler.HANDLER_NAME, str(fn), {},
+            root=str(self.root))
 
         # this gets auto turned off at the end
         self.capture.put(1)
