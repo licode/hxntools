@@ -1,6 +1,6 @@
 from __future__ import print_function
 import logging
-
+from pathlib import PurePath
 from ophyd import (AreaDetector, CamBase, TIFFPlugin, Component as Cpt,
                    HDF5Plugin, Device, StatsPlugin, ProcessPlugin,
                    ROIPlugin, TransformPlugin)
@@ -57,8 +57,10 @@ class MerlinFileStoreHDF5(FileStorePluginBase, FileStoreBulkReadable):
         staged = super().stage()
         res_kwargs = {'frame_per_point': 1}
         logger.debug("Inserting resource with filename %s", self._fn)
-        self._resource = fsapi.insert_resource(self._spec, self._fn,
-                                               res_kwargs)
+        fn = PurePath(self._fn).relative_to(self.root)
+        self._resource = fsapi.insert_resource(self._spec, fn,
+                                               res_kwargs,
+                                               root=str(self.root))
         return staged
 
     def make_filename(self):
@@ -84,7 +86,8 @@ class HxnMerlinDetector(HxnModalTrigger, MerlinDetector):
     hdf5 = Cpt(HDF5PluginWithFileStore, 'HDF1:',
                read_attrs=[],
                configuration_attrs=[],
-               write_path_template='/data/%Y/%m/%d/')
+               write_path_template='/data/%Y/%m/%d/',
+               root='/data')
 
     proc1 = Cpt(ProcessPlugin, 'Proc1:')
     stats1 = Cpt(StatsPlugin, 'Stats1:')
@@ -101,7 +104,8 @@ class HxnMerlinDetector(HxnModalTrigger, MerlinDetector):
     # tiff1 = Cpt(MerlinTiffPlugin, 'TIFF1:',
     #             read_attrs=[],
     #             configuration_attrs=[],
-    #             write_path_template='/data/%Y/%m/%d/')
+    #             write_path_template='/data/%Y/%m/%d/',
+    #             root='/data')
 
     def __init__(self, prefix, *, read_attrs=None, configuration_attrs=None,
                  **kwargs):

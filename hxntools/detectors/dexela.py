@@ -11,8 +11,8 @@ from ophyd.areadetector.filestore_mixins import (
 
 from .utils import (makedirs, make_filename_add_subdirectory)
 from .trigger_mixins import (HxnModalTrigger, FileStoreBulkReadable)
-import filestore.api as fsapi
 
+from pathlib import PurePath
 
 logger = logging.getLogger(__name__)
 
@@ -83,8 +83,11 @@ class DexelaFileStoreHDF5(FileStorePluginBase, FileStoreBulkReadable):
         staged = super().stage()
         res_kwargs = {'frame_per_point': 1}
         logger.debug("Inserting resource with filename %s", self._fn)
-        self._resource = fsapi.insert_resource(self._spec, self._fn,
-                                               res_kwargs)
+        fn = PurePath(self._fn).relative_to(self.root)
+        self._resource = self._fs.insert_resource(self.filestore_spec,
+                                                  str(fn), res_kwargs,
+                                                  root=str(self.root))
+
         return staged
 
     def make_filename(self):
@@ -124,7 +127,8 @@ class HxnDexelaDetector(HxnModalTrigger, DexelaDetector):
                read_attrs=[],
                configuration_attrs=[],
                write_path_template='Z:\\%Y\\%m\\%d\\',
-               read_path_template='/data/%Y/%m/%d/')
+               read_path_template='/data/%Y/%m/%d/',
+               root='/data')
 
     # tiff1 = Cpt(DexelaTiffPlugin, 'TIFF1:',
     #             read_attrs=[],

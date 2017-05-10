@@ -1,6 +1,6 @@
 import logging
 
-import filestore.api as fsapi
+from pathlib import PurePath
 from ophyd.areadetector.filestore_mixins import (FileStoreIterativeWrite,
                                                  FileStoreTIFF,
                                                  FileStorePluginBase,
@@ -126,8 +126,10 @@ class TimepixFileStoreHDF5(FileStorePluginBase, FileStoreIterativeWrite):
         staged = super().stage()
         res_kwargs = {'frame_per_point': 1}
         logger.debug("Inserting resource with filename %s", self._fn)
-        self._resource = fsapi.insert_resource(self._spec, self._fn,
-                                               res_kwargs)
+        fn = PurePath(self._fn).relative_to(self.root)
+        self._resource = self._fn.insert_resource(self._spec, str(fn),
+                                                  res_kwargs,
+                                                  root=str(self.root))
         return staged
 
     def make_filename(self):
@@ -151,7 +153,8 @@ class HxnTimepixDetector(TimepixDetector):
     hdf5 = Cpt(HDF5PluginWithFileStore, 'HDF1:',
                read_attrs=[],
                configuration_attrs=[],
-               write_path_template='/data/%Y/%m/%d/')
+               write_path_template='/data/%Y/%m/%d/',
+               root='/data')
 
     proc1 = Cpt(ProcessPlugin, 'Proc1:')
     stats1 = Cpt(StatsPlugin, 'Stats1:')
@@ -168,7 +171,8 @@ class HxnTimepixDetector(TimepixDetector):
     # tiff1 = Cpt(TimepixTiffPlugin, 'TIFF1:',
     #             read_attrs=[],
     #             configuration_attrs=[],
-    #             write_path_template='/data/%Y/%m/%d/')
+    #             write_path_template='/data/%Y/%m/%d/',
+    #             root='/data')
 
     def __init__(self, prefix, *, read_attrs=None, configuration_attrs=None,
                  **kwargs):
