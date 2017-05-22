@@ -109,8 +109,8 @@ class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
                 for uid, ch in zip(uids, self.channels)
                 }
 
-    def stop(self):
-        ret = super().stop()
+    def stop(self, success=False):
+        ret = super().stop(success=success)
         self.capture.put(0)
         return ret
 
@@ -210,10 +210,10 @@ class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
                           .format(self.file_path.value))
 
         logger.debug('Inserting the filestore resource: %s', self._fn)
-        fn = PurePath(self._fn).relative_to(self.root)
+        fn = PurePath(self._fn).relative_to(self.fs_root)
         self._resource = self._fs.insert_resource(
             Xspress3HDF5Handler.HANDLER_NAME, str(fn), {},
-            root=str(self.root))
+            root=str(self.fs_root))
 
         # this gets auto turned off at the end
         self.capture.put(1)

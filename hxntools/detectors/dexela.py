@@ -83,10 +83,10 @@ class DexelaFileStoreHDF5(FileStorePluginBase, FileStoreBulkReadable):
         staged = super().stage()
         res_kwargs = {'frame_per_point': 1}
         logger.debug("Inserting resource with filename %s", self._fn)
-        fn = PurePath(self._fn).relative_to(self.root)
+        fn = PurePath(self._fn).relative_to(self.fs_root)
         self._resource = self._fs.insert_resource(self.filestore_spec,
                                                   str(fn), res_kwargs,
-                                                  root=str(self.root))
+                                                  root=str(self.fs_root))
 
         return staged
 

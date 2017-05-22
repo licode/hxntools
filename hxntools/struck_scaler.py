@@ -31,7 +31,7 @@ class StruckMCA(EpicsMCARecord):
         self.index = index
         super().__init__(prefix, **kwargs)
 
-    def stop(self):
+    def stop(self, success=False):
         pass
 
 
