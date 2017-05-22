@@ -75,7 +75,7 @@ class HxnModalBase(Device):
         if self.mode == 'external':
             logger.debug('[Unstage] Stopping externally-triggered detector %s',
                          self.name)
-            self.stop()
+            self.stop(success=True)
 
         super().unstage()
 
@@ -88,8 +88,8 @@ class HxnModalTrigger(HxnModalBase, TriggerBase):
         self._image_name = image_name
         self._external_acquire_at_stage = True
 
-    def stop(self):
-        ret = super().stop()
+    def stop(self, success=False):
+        ret = super().stop(success=success)
         self._acquisition_signal.put(0, wait=True)
         return ret
 
