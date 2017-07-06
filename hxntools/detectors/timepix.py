@@ -127,7 +127,7 @@ class TimepixFileStoreHDF5(FileStorePluginBase, FileStoreIterativeWrite):
         res_kwargs = {'frame_per_point': 1}
         logger.debug("Inserting resource with filename %s", self._fn)
         fn = PurePath(self._fn).relative_to(self.fs_root)
-        self._resource = self._fn.insert_resource(self._spec, str(fn),
+        self._resource = self._fs.insert_resource(self._spec, str(fn),
                                                   res_kwargs,
                                                   root=str(self.fs_root))
         return staged
