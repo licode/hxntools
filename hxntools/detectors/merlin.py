@@ -8,9 +8,8 @@ from ophyd import (AreaDetector, CamBase, TIFFPlugin, Component as Cpt,
 from ophyd.areadetector.filestore_mixins import (
     FileStoreIterativeWrite, FileStoreTIFF, FileStorePluginBase)
 
-from .utils import (makedirs, make_filename_add_subdirectory)
+from .utils import makedirs
 from .trigger_mixins import (HxnModalTrigger, FileStoreBulkReadable)
-import filestore.api as fsapi
 
 
 logger = logging.getLogger(__name__)
@@ -58,9 +57,10 @@ class MerlinFileStoreHDF5(FileStorePluginBase, FileStoreBulkReadable):
         res_kwargs = {'frame_per_point': 1}
         logger.debug("Inserting resource with filename %s", self._fn)
         fn = PurePath(self._fn).relative_to(self.fs_root)
-        self._resource = fsapi.insert_resource(self._spec, fn,
-                                               res_kwargs,
-                                               root=str(self.fs_root))
+        self._resource = self._reg.register_resource(self._spec,
+                                                     str(self.fs_root), fn,
+                                                     res_kwargs)
+
         return staged
 
     def make_filename(self):

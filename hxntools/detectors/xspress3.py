@@ -211,9 +211,10 @@ class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
 
         logger.debug('Inserting the filestore resource: %s', self._fn)
         fn = PurePath(self._fn).relative_to(self.fs_root)
-        self._filestore_res = self._fs.insert_resource(
-            Xspress3HDF5Handler.HANDLER_NAME, str(fn), {},
-            root=str(self.fs_root))
+        self._filestore_res = self._reg.register_resource(
+            Xspress3HDF5Handler.HANDLER_NAME,
+            str(self.fs_root), str(fn),
+            {})
 
         # this gets auto turned off at the end
         self.capture.put(1)
