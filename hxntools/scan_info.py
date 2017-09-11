@@ -4,10 +4,12 @@ import functools
 import numpy as np
 import pandas as pd
 
-from databroker import (DataBroker as db, get_table as _get_table)
-
+#from databroker import (DataBroker as db, get_table as _get_table)
+from db_config_hxn import db
+_get_table = db.get_table
 
 logger = logging.getLogger(__name__)
+
 
 
 def _eval(scan_args):

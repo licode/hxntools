@@ -2,7 +2,8 @@ import logging
 
 # from ophyd import EpicsSignal
 from epics import PV
-from databroker import DataBroker
+#from databroker import DataBroker
+from db_config_hxn import db
 from bluesky.utils import CallbackRegistry
 
 from .scan_info import get_scan_info
@@ -128,7 +129,7 @@ class ScanBrokerMonitor(ScanUidMonitor):
 
     def _query_db(self, uid):
         '''Query the databroker for a specific uid'''
-        headers = DataBroker(uid=uid)
+        headers = db[uid]
         if len(headers) != 1:
             logger.error('Found %d headers matching uid=%s, only expected one',
                          len(headers), uid)
