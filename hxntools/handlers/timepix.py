@@ -1,4 +1,4 @@
-from filestore.handlers import HDF5DatasetSliceHandler
+from databroker.assets.handlers import HDF5DatasetSliceHandler
 
 
 class TimepixHDF5Handler(HDF5DatasetSliceHandler):
@@ -25,7 +25,6 @@ class TimepixHDF5Handler(HDF5DatasetSliceHandler):
                 frame_per_point=frame_per_point)
 
 
-def register():
-    import filestore.api as fs_api
-    fs_api.register_handler(TimepixHDF5Handler._handler_name,
+def register(db):
+    db.reg.register_handler(TimepixHDF5Handler._handler_name,
                             TimepixHDF5Handler, overwrite=True)
