@@ -9,15 +9,15 @@ from ophyd.areadetector import (EpicsSignalWithRBV as SignalWithRBV)
 from ophyd.areadetector.filestore_mixins import (
     FileStoreIterativeWrite, FileStoreTIFF, FileStorePluginBase)
 
-from .utils import (makedirs, make_filename_add_subdirectory)
-from .trigger_mixins import (HxnModalTrigger, FileStoreBulkReadable)
+from .utils import makedirs
+from .trigger_mixins import HxnModalTrigger
 
 from pathlib import PurePath
 
 logger = logging.getLogger(__name__)
 
 
-class DexelaTiffPlugin(TIFFPlugin, FileStoreBulkReadable, FileStoreTIFF,
+class DexelaTiffPlugin(TIFFPlugin, FileStoreIterativeWrite, FileStoreTIFF,
                        Device):
     def mode_external(self):
         total_points = self.parent.mode_settings.total_points.get()
@@ -68,7 +68,7 @@ class DexelaDetector(AreaDetector):
               )
 
 
-class DexelaFileStoreHDF5(FileStorePluginBase, FileStoreBulkReadable):
+class DexelaFileStoreHDF5(FileStorePluginBase, FileStoreIterativeWrite):
     _spec = 'TPX_HDF5'
 
     def __init__(self, *args, **kwargs):

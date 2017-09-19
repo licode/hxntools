@@ -1,15 +1,12 @@
 import time as ttime
-import itertools
+
 import logging
 
 from ophyd.device import (DeviceStatus, BlueskyInterface, Staged,
                           Component as Cpt, Device)
 from ophyd import (Signal, )
-from ophyd.areadetector.filestore_mixins import FileStoreBulkWrite
 
-from filestore.api import bulk_insert_datum
-from .utils import (ordered_dict_move_to_beginning,
-                    make_filename_add_subdirectory)
+from .utils import (ordered_dict_move_to_beginning)
 
 logger = logging.getLogger(__name__)
 
@@ -163,32 +160,3 @@ class HxnModalTrigger(HxnModalBase, TriggerBase):
         if (old_value == 1) and (value == 0):
             # Negative-going edge means an acquisition just finished.
             self._status._finished()
-
-
-class FileStoreBulkReadable(FileStoreBulkWrite):
-    def make_filename(self):
-        fn, read_path, write_path = super().make_filename()
-        make_dirs = self.parent.mode_settings.make_directories.get()
-        return make_filename_add_subdirectory(fn, read_path, write_path,
-                                              make_directories=make_dirs)
-
-    def _reset_data(self):
-        self._datum_uids.clear()
-        self._datum_kwargs_map.clear()
-        self._point_counter = itertools.count()
-
-    def bulk_read(self, timestamps):
-        image_name = self.image_name
-
-        uids = [self.generate_datum(self.image_name, ts) for ts in timestamps]
-        datum_args = [self._datum_kwargs_map[uid] for uid in uids]
-
-        bulk_insert_datum(self._resource, uids, datum_args)
-
-        # clear so unstage will not save the images twice:
-        self._reset_data()
-        return {image_name: uids}
-
-    @property
-    def image_name(self):
-        return self.parent._image_name
