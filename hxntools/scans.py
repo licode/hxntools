@@ -5,8 +5,7 @@ import logging
 from cycler import cycler
 from boltons.iterutils import chunked
 
-from bluesky import (plans, spec_api, Msg)
-from bluesky.global_state import get_gs
+from bluesky import (plans, Msg)
 from bluesky import plan_patterns
 
 from ophyd import (Device, Component as Cpt, EpicsSignal)
@@ -110,25 +109,31 @@ def _pre_scan(total_points, count_time):
               count_time=count_time)
 
 
-@functools.wraps(spec_api.ct)
+@functools.wraps(plans.count)
 def count(num=1, delay=None, time=None, *, md=None):
     yield from _pre_scan(total_points=num, count_time=time)
-    yield from spec_api.ct(num=num, delay=delay, time=time, md=md)
+    return (yield from plans.configure_count_time_wrapper(
+        plans.count(num=num, delay=delay, md=md),
+        time=time))
 
 
-@functools.wraps(spec_api.ascan)
+@functools.wraps(plans.scan)
 def absolute_scan(motor, start, finish, intervals, time=None, *, md=None):
     yield from _pre_scan(total_points=intervals + 1, count_time=time)
-    yield from spec_api.ascan(motor, start, finish, intervals, time, md=md)
+    return (yield from plans.configure_count_time_wrapper(
+        plans.scan(motor, start, finish, intervals, md=md),
+        time=time))
 
 
-@functools.wraps(spec_api.dscan)
+@functools.wraps(plans.relative_scan)
 def relative_scan(motor, start, finish, intervals, time=None, *, md=None):
     yield from _pre_scan(total_points=intervals + 1, count_time=time)
-    yield from spec_api.dscan(motor, start, finish, intervals, time, md=md)
+    return (yield from plans.configure_count_time_wrapper(
+        plans.relative_scan(motor, start, finish, intervals+1, md=md),
+        time=time))
 
 
-@functools.wraps(spec_api.afermat)
+@functools.wraps(plans.spiral_fermat)
 def absolute_fermat(x_motor, y_motor, x_start, y_start, x_range, y_range, dr,
                     factor, time=None, *, per_step=None, md=None, tilt=0.0):
     cyc = plan_patterns.spiral_fermat(x_motor, y_motor, x_motor.position,
@@ -137,12 +142,14 @@ def absolute_fermat(x_motor, y_motor, x_start, y_start, x_range, y_range, dr,
     total_points = len(cyc)
 
     yield from _pre_scan(total_points=total_points, count_time=time)
-    yield from spec_api.afermat(x_motor, y_motor, x_start, y_start, x_range,
-                                y_range, dr, factor, time=time,
-                                per_step=per_step, md=md, tilt=tilt)
+    return (yield from plans.configure_count_time_wrapper(
+        plans.spiral_fermat(x_motor, y_motor, x_start, y_start, x_range,
+                            y_range, dr, factor,
+                            per_step=per_step, md=md, tilt=tilt),
+        time=time))
 
 
-@functools.wraps(spec_api.fermat)
+@functools.wraps(plans.relative_spiral_fermat)
 def relative_fermat(x_motor, y_motor, x_range, y_range, dr, factor, time=None,
                     *, per_step=None, md=None, tilt=0.0):
     cyc = plan_patterns.spiral_fermat(x_motor, y_motor, x_motor.position,
@@ -151,11 +158,14 @@ def relative_fermat(x_motor, y_motor, x_range, y_range, dr, factor, time=None,
     total_points = len(cyc)
 
     yield from _pre_scan(total_points=total_points, count_time=time)
-    yield from spec_api.fermat(x_motor, y_motor, x_range, y_range, dr, factor,
-                               time=time, per_step=per_step, md=md, tilt=tilt)
+    return (yield from plans.configure_count_time_wrapper(
+        plans.relative_spiral_fermat(
+            x_motor, y_motor, x_range, y_range, dr, factor,
+            per_step=per_step, md=md, tilt=tilt),
+        time=time))
 
 
-@functools.wraps(spec_api.aspiral)
+@functools.wraps(plans.spiral)
 def absolute_spiral(x_motor, y_motor, x_start, y_start, x_range, y_range, dr,
                     nth, time=None, *, per_step=None, md=None, tilt=0.0):
     cyc = plan_patterns.spiral_simple(x_motor, y_motor, x_motor.position,
@@ -164,12 +174,14 @@ def absolute_spiral(x_motor, y_motor, x_start, y_start, x_range, y_range, dr,
     total_points = len(cyc)
 
     yield from _pre_scan(total_points=total_points, count_time=time)
-    yield from spec_api.aspiral(x_motor, y_motor, x_start, y_start, x_range,
-                                y_range, dr, nth, time=time,
-                                per_step=per_step, md=md, tilt=tilt)
+    return (yield from plans.configure_count_time_wrapper(
+        plans.spiral(x_motor, y_motor, x_start, y_start, x_range,
+                     y_range, dr, nth,
+                     per_step=per_step, md=md, tilt=tilt),
+        time=time))
 
 
-@functools.wraps(spec_api.spiral)
+@functools.wraps(plans.relative_spiral)
 def relative_spiral(x_motor, y_motor, x_range, y_range, dr, nth, time=None,
                     *, per_step=None, md=None, tilt=0.0):
     cyc = plan_patterns.spiral_simple(x_motor, y_motor, x_motor.position,
@@ -178,11 +190,13 @@ def relative_spiral(x_motor, y_motor, x_range, y_range, dr, nth, time=None,
     total_points = len(cyc)
 
     yield from _pre_scan(total_points=total_points, count_time=time)
-    yield from spec_api.spiral(x_motor, y_motor, x_range, y_range, dr, nth,
-                               time=time, per_step=per_step, md=md, tilt=tilt)
+    return (yield from plans.configure_count_time_wrapper(
+        plans.relative_spiral(x_motor, y_motor, x_range, y_range, dr, nth,
+                              per_step=per_step, md=md, tilt=tilt),
+        time=time))
 
 
-@functools.wraps(spec_api.mesh)
+@functools.wraps(plans.outer_product_scan)
 def absolute_mesh(*args, time=None, md=None):
     if (len(args) % 4) == 1:
         if time is not None:
@@ -194,14 +208,16 @@ def absolute_mesh(*args, time=None, md=None):
         total_points *= num
 
     yield from _pre_scan(total_points=total_points, count_time=time)
-    yield from spec_api.mesh(*args, time=time, md=md)
+    return (yield from plans.configure_count_time_wrapper(
+        plans.outer_product_scan(*args, md=md),
+        time=time))
 
 
 @functools.wraps(absolute_mesh)
 def relative_mesh(*args, time=None, md=None):
     plan = absolute_mesh(*args, time=time, md=md)
     plan = plans.relative_set(plan)  # re-write trajectory as relative
-    yield from plans.reset_positions(plan)
+    return (yield from plans.reset_positions(plan))
 
 
 def _get_a2_args(*args, time=None):
@@ -213,20 +229,24 @@ def _get_a2_args(*args, time=None):
     return args, time
 
 
-@functools.wraps(spec_api.a2scan)
+@functools.wraps(plans.inner_product_scan)
 def a2scan(*args, time=None, md=None):
     args, time = _get_a2_args(*args, time=time)
     total_points = int(args[-1])
     yield from _pre_scan(total_points=total_points, count_time=time)
-    yield from spec_api.a2scan(*args, time=time, md=md)
+    return (yield from plans.configure_count_time_wrapper(
+        plans.inner_product_scan(*args, md=md),
+        time=time))
 
 
-@functools.wraps(spec_api.d2scan)
+@functools.wraps(plans.relative_inner_product_scan)
 def d2scan(*args, time=None, md=None):
     args, time = _get_a2_args(*args, time=time)
     total_points = int(args[-1])
     yield from _pre_scan(total_points=total_points, count_time=time)
-    yield from spec_api.d2scan(*args, time=time, md=md)
+    return (yield from plans.configure_count_time_wrapper(
+        plans.relative_inner_product_scan(*args, md=md),
+        time=time))
 
 
 def scan_steps(*args, time=None, per_step=None, md=None):
@@ -265,16 +285,12 @@ def scan_steps(*args, time=None, per_step=None, md=None):
     from collections import ChainMap
     from bluesky.callbacks import LiveTable
 
-    gs = get_gs()
     md = ChainMap(md, {'plan_name': 'scan_steps',
                        gs.MD_TIME_KEY: time})
 
-    # TODO this will be refactored very soon in upstream bluesky
-    subs = {'all': [LiveTable(motors + [gs.PLOT_Y] + gs.TABLE_COLS), ]}
     plan = plans.scan_nd(gs.DETS, cyc, md=md, per_step=per_step)
     plan = plans.baseline_wrapper(plan, motors + gs.BASELINE_DEVICES)
     plan = plans.configure_count_time_wrapper(plan, time)
-    plan = plans.subs_wrapper(plan, subs)
 
     yield from _pre_scan(total_points=total_points, count_time=time)
-    yield from plans.reset_positions_wrapper(plan)
+    return (yield from plans.reset_positions_wrapper(plan))
