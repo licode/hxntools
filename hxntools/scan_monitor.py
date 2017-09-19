@@ -1,8 +1,9 @@
 import logging
 
+import time
+
 # from ophyd import EpicsSignal
 from epics import PV
-from databroker import DataBroker
 from bluesky.utils import CallbackRegistry
 
 from .scan_info import get_scan_info
@@ -23,7 +24,7 @@ class ScanUidMonitor:
     uid_pv : str
         The UID PV name
     '''
-    def __init__(self, uid_pv):
+    def __init__(self, uid_pv, db):
         self.last_uid = None
         self.cb_registry = CallbackRegistry(allowed_sigs=('start', 'stop'))
 
@@ -31,6 +32,7 @@ class ScanUidMonitor:
         self.cb_registry.connect('stop', self.scan_finished)
 
         self.uid_pv = PV(uid_pv, callback=self._uid_changed)
+        self.db = db
 
     def connect(self, sig, func):
         """Register ``func`` to be called when ``sig`` is generated
@@ -102,6 +104,15 @@ class ScanUidMonitor:
         '''
         pass
 
+    def run():
+        print('Monitoring, press Ctrl-C to quit')
+        try:
+            while True:
+                time.sleep(1.)
+        except KeyboardInterrupt:
+            pass
+
+
 
 class ScanBrokerMonitor(ScanUidMonitor):
     '''Monitor scans via uid PV and retrieve metadatastore info
@@ -128,13 +139,7 @@ class ScanBrokerMonitor(ScanUidMonitor):
 
     def _query_db(self, uid):
         '''Query the databroker for a specific uid'''
-        headers = DataBroker(uid=uid)
-        if len(headers) != 1:
-            logger.error('Found %d headers matching uid=%s, only expected one',
-                         len(headers), uid)
-            return
-
-        return headers[0]
+        return self.db[uid]
 
     def _scan_started(self, uid):
         logger.debug('Scan started: %s', uid)
@@ -193,9 +198,9 @@ class HxnScanMonitor(ScanBrokerMonitor):
         pass
 
 
-def _test():
+def _test(db):
     import sys
-    import time
+
     try:
         uid_pv = sys.argv[1]
     except IndexError:
@@ -204,16 +209,12 @@ def _test():
     print('Using uid pv: {}'.format(uid_pv))
     # uid_mon = ScanUidMonitor(uid_pv)
     # broker_mon = ScanBrokerMonitor(uid_pv)
-    hxn_mon = HxnScanMonitor(uid_pv)
+    hxn_mon = HxnScanMonitor(uid_pv, db)
 
-    print('Monitoring, press Ctrl-C to quit')
-    try:
-        while True:
-            time.sleep(1.)
-    except KeyboardInterrupt:
-        pass
+    hxn_mon.run()
 
 
 if __name__ == '__main__':
+    from databroker.databroker import DataBroker
     logging.basicConfig(level=logging.DEBUG)
-    _test()
+    _test(DataBroker)
