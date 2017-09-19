@@ -2,11 +2,9 @@ from __future__ import print_function, division
 import time
 import time as ttime
 import logging
-import itertools
 import uuid
 
 from pathlib import PurePath
-from filestore.api import bulk_insert_datum
 from .utils import makedirs
 
 from collections import OrderedDict
@@ -99,9 +97,9 @@ class Xspress3FileStore(FileStorePluginBase, HDF5Plugin):
         timestamp = time.time()
         uids = [str(uuid.uuid4()) for ch in self.channels]
 
-        bulk_insert_datum(self._filestore_res, uids,
-                          self._get_datum_args(self.parent._abs_trigger_count))
-        # print(self._get_datum_args(self.parent._abs_trigger_count))
+        self._reg.bulk_register_datum_list(
+            self._filestore_res, uids,
+            self._get_datum_args(self.parent._abs_trigger_count))
 
         return {self.mds_keys[ch]: {'timestamp': timestamp,
                                     'value': uid,
