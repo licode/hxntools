@@ -106,27 +106,22 @@ def _pre_scan(dets, total_points, count_time):
 @functools.wraps(plans.count)
 def count(dets, num=1, delay=None, time=None, *, md=None):
     yield from _pre_scan(dets, total_points=num, count_time=time)
-    return (yield from plans.configure_count_time_wrapper(
-        plans.count(dets, num=num, delay=delay, md=md),
-        time=time))
+    return (plans.count(dets, num=num, delay=delay, md=md))
 
 
 @functools.wraps(plans.scan)
 def absolute_scan(dets, motor, start, finish, intervals, time=None, *,
                   md=None):
     yield from _pre_scan(dets, total_points=intervals + 1, count_time=time)
-    return (yield from plans.configure_count_time_wrapper(
-        plans.scan(dets, motor, start, finish, intervals, md=md),
-        time=time))
+    return (plans.scan(dets, motor, start, finish, intervals, md=md))
 
 
 @functools.wraps(plans.relative_scan)
 def relative_scan(dets, motor, start, finish, intervals, time=None, *,
                   md=None):
     yield from _pre_scan(dets, total_points=intervals + 1, count_time=time)
-    return (yield from plans.configure_count_time_wrapper(
-        plans.relative_scan(dets, motor, start, finish, intervals+1, md=md),
-        time=time))
+    return (plans.relative_scan(dets, motor, start, finish,
+                                intervals+1, md=md))
 
 
 @functools.wraps(plans.spiral_fermat)
@@ -139,11 +134,9 @@ def absolute_fermat(dets, x_motor, y_motor, x_start, y_start, x_range,
     total_points = len(cyc)
 
     yield from _pre_scan(dets, total_points=total_points, count_time=time)
-    return (yield from plans.configure_count_time_wrapper(
-        plans.spiral_fermat(dets, x_motor, y_motor, x_start, y_start, x_range,
-                            y_range, dr, factor,
-                            per_step=per_step, md=md, tilt=tilt),
-        time=time))
+    return (plans.spiral_fermat(dets, x_motor, y_motor, x_start,
+                                y_start, x_range, y_range, dr, factor,
+                                per_step=per_step, md=md, tilt=tilt))
 
 
 @functools.wraps(plans.relative_spiral_fermat)
@@ -155,11 +148,9 @@ def relative_fermat(dets, x_motor, y_motor, x_range, y_range, dr,
     total_points = len(cyc)
 
     yield from _pre_scan(dets, total_points=total_points, count_time=time)
-    return (yield from plans.configure_count_time_wrapper(
-        plans.relative_spiral_fermat(dets,
+    return (plans.relative_spiral_fermat(dets,
             x_motor, y_motor, x_range, y_range, dr, factor,
-            per_step=per_step, md=md, tilt=tilt),
-        time=time))
+            per_step=per_step, md=md, tilt=tilt))
 
 
 @functools.wraps(plans.spiral)
@@ -172,11 +163,9 @@ def absolute_spiral(dets, x_motor, y_motor, x_start, y_start, x_range,
     total_points = len(cyc)
 
     yield from _pre_scan(dets, total_points=total_points, count_time=time)
-    return (yield from plans.configure_count_time_wrapper(
-        plans.spiral(dets, x_motor, y_motor, x_start, y_start, x_range,
-                     y_range, dr, nth,
-                     per_step=per_step, md=md, tilt=tilt),
-        time=time))
+    return (plans.spiral(dets, x_motor, y_motor, x_start, y_start,
+                         x_range, y_range, dr, nth, per_step=per_step,
+                         md=md, tilt=tilt))
 
 
 @functools.wraps(plans.relative_spiral)
@@ -188,11 +177,9 @@ def relative_spiral(dets, x_motor, y_motor, x_range, y_range, dr, nth,
     total_points = len(cyc)
 
     yield from _pre_scan(dets, total_points=total_points, count_time=time)
-    return (yield from plans.configure_count_time_wrapper(
-        plans.relative_spiral(dets, x_motor, y_motor, x_range,
-                              y_range, dr, nth, per_step=per_step, md=md,
-                              tilt=tilt),
-        time=time))
+    return (plans.relative_spiral(dets, x_motor, y_motor, x_range,
+                                  y_range, dr, nth, per_step=per_step,
+                                  md=md, tilt=tilt))
 
 
 @functools.wraps(plans.outer_product_scan)
@@ -207,9 +194,7 @@ def absolute_mesh(dets, *args, time=None, md=None):
         total_points *= num
 
     yield from _pre_scan(dets, total_points=total_points, count_time=time)
-    return (yield from plans.configure_count_time_wrapper(
-        plans.outer_product_scan(dets, *args, md=md),
-        time=time))
+    return (plans.outer_product_scan(dets, *args, md=md))
 
 
 @functools.wraps(absolute_mesh)
@@ -233,9 +218,7 @@ def a2scan(dets, *args, time=None, md=None):
     args, time = _get_a2_args(*args, time=time)
     total_points = int(args[-1])
     yield from _pre_scan(dets, total_points=total_points, count_time=time)
-    return (yield from plans.configure_count_time_wrapper(
-        plans.inner_product_scan(dets, *args, md=md),
-        time=time))
+    return (plans.inner_product_scan(dets, *args, md=md))
 
 
 @functools.wraps(plans.relative_inner_product_scan)
@@ -243,9 +226,7 @@ def d2scan(dets, *args, time=None, md=None):
     args, time = _get_a2_args(*args, time=time)
     total_points = int(args[-1])
     yield from _pre_scan(dets, total_points=total_points, count_time=time)
-    return (yield from plans.configure_count_time_wrapper(
-        plans.relative_inner_product_scan(dets, *args, md=md),
-        time=time))
+    return (plans.relative_inner_product_scan(dets, *args, md=md))
 
 
 def scan_steps(dets, *args, time=None, per_step=None, md=None):
