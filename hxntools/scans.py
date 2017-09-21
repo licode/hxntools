@@ -79,33 +79,27 @@ def cmd_scan_setup(msg):
         det.mode_setup(mode)
 
 
-@asyncio.coroutine
-def cmd_next_scan_id(msg):
-    gs = get_gs()
-    gs.RE.md['scan_id'] = get_next_scan_id() - 1
+def setup(*, RE, debug_mode=False):
+    @asyncio.coroutine
+    def cmd_next_scan_id(msg):
+        RE.md['scan_id'] = get_next_scan_id() - 1
 
+    @asyncio.coroutine
+    def _debug_next_scan_id(cmd):
+        print('debug_next_scan_id')
+        RE.md['scan_id'] = 0
 
-@asyncio.coroutine
-def _debug_next_scan_id(cmd):
-    print('debug_next_scan_id')
-    gs = get_gs()
-    gs.RE.md['scan_id'] = 0
-
-
-def setup(*, debug_mode=False):
-    gs = get_gs()
-    gs.RE.register_command('hxn_scan_setup', cmd_scan_setup)
+    RE.register_command('hxn_scan_setup', cmd_scan_setup)
 
     if debug_mode:
-        gs.RE.register_command('hxn_next_scan_id', _debug_next_scan_id)
+        RE.register_command('hxn_next_scan_id', _debug_next_scan_id)
     else:
-        gs.RE.register_command('hxn_next_scan_id', cmd_next_scan_id)
+        RE.register_command('hxn_next_scan_id', cmd_next_scan_id)
 
 
-def _pre_scan(total_points, count_time):
-    gs = get_gs()
+def _pre_scan(dets, total_points, count_time):
     yield Msg('hxn_next_scan_id')
-    yield Msg('hxn_scan_setup', detectors=gs.DETS, total_points=total_points,
+    yield Msg('hxn_scan_setup', detectors=dets, total_points=total_points,
               count_time=count_time)
 
 
