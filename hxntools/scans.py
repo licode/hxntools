@@ -104,94 +104,99 @@ def _pre_scan(dets, total_points, count_time):
 
 
 @functools.wraps(plans.count)
-def count(num=1, delay=None, time=None, *, md=None):
-    yield from _pre_scan(total_points=num, count_time=time)
+def count(dets, num=1, delay=None, time=None, *, md=None):
+    yield from _pre_scan(dets, total_points=num, count_time=time)
     return (yield from plans.configure_count_time_wrapper(
-        plans.count(num=num, delay=delay, md=md),
+        plans.count(dets, num=num, delay=delay, md=md),
         time=time))
 
 
 @functools.wraps(plans.scan)
-def absolute_scan(motor, start, finish, intervals, time=None, *, md=None):
-    yield from _pre_scan(total_points=intervals + 1, count_time=time)
+def absolute_scan(dets, motor, start, finish, intervals, time=None, *,
+                  md=None):
+    yield from _pre_scan(dets, total_points=intervals + 1, count_time=time)
     return (yield from plans.configure_count_time_wrapper(
-        plans.scan(motor, start, finish, intervals, md=md),
+        plans.scan(dets, motor, start, finish, intervals, md=md),
         time=time))
 
 
 @functools.wraps(plans.relative_scan)
-def relative_scan(motor, start, finish, intervals, time=None, *, md=None):
-    yield from _pre_scan(total_points=intervals + 1, count_time=time)
+def relative_scan(dets, motor, start, finish, intervals, time=None, *,
+                  md=None):
+    yield from _pre_scan(dets, total_points=intervals + 1, count_time=time)
     return (yield from plans.configure_count_time_wrapper(
-        plans.relative_scan(motor, start, finish, intervals+1, md=md),
+        plans.relative_scan(dets, motor, start, finish, intervals+1, md=md),
         time=time))
 
 
 @functools.wraps(plans.spiral_fermat)
-def absolute_fermat(x_motor, y_motor, x_start, y_start, x_range, y_range, dr,
-                    factor, time=None, *, per_step=None, md=None, tilt=0.0):
+def absolute_fermat(dets, x_motor, y_motor, x_start, y_start, x_range,
+                    y_range, dr, factor, time=None, *, per_step=None,
+                    md=None, tilt=0.0):
     cyc = plan_patterns.spiral_fermat(x_motor, y_motor, x_motor.position,
                                       y_motor.position, x_range, y_range, dr,
                                       factor, tilt=tilt)
     total_points = len(cyc)
 
-    yield from _pre_scan(total_points=total_points, count_time=time)
+    yield from _pre_scan(dets, total_points=total_points, count_time=time)
     return (yield from plans.configure_count_time_wrapper(
-        plans.spiral_fermat(x_motor, y_motor, x_start, y_start, x_range,
+        plans.spiral_fermat(dets, x_motor, y_motor, x_start, y_start, x_range,
                             y_range, dr, factor,
                             per_step=per_step, md=md, tilt=tilt),
         time=time))
 
 
 @functools.wraps(plans.relative_spiral_fermat)
-def relative_fermat(x_motor, y_motor, x_range, y_range, dr, factor, time=None,
-                    *, per_step=None, md=None, tilt=0.0):
+def relative_fermat(dets, x_motor, y_motor, x_range, y_range, dr,
+                    factor, time=None, *, per_step=None, md=None, tilt=0.0):
     cyc = plan_patterns.spiral_fermat(x_motor, y_motor, x_motor.position,
                                       y_motor.position, x_range, y_range, dr,
                                       factor, tilt=tilt)
     total_points = len(cyc)
 
-    yield from _pre_scan(total_points=total_points, count_time=time)
+    yield from _pre_scan(dets, total_points=total_points, count_time=time)
     return (yield from plans.configure_count_time_wrapper(
-        plans.relative_spiral_fermat(
+        plans.relative_spiral_fermat(dets,
             x_motor, y_motor, x_range, y_range, dr, factor,
             per_step=per_step, md=md, tilt=tilt),
         time=time))
 
 
 @functools.wraps(plans.spiral)
-def absolute_spiral(x_motor, y_motor, x_start, y_start, x_range, y_range, dr,
-                    nth, time=None, *, per_step=None, md=None, tilt=0.0):
+def absolute_spiral(dets, x_motor, y_motor, x_start, y_start, x_range,
+                    y_range, dr, nth, time=None, *, per_step=None,
+                    md=None, tilt=0.0):
     cyc = plan_patterns.spiral_simple(x_motor, y_motor, x_motor.position,
                                       y_motor.position, x_range, y_range, dr,
                                       nth, tilt=tilt)
     total_points = len(cyc)
 
-    yield from _pre_scan(total_points=total_points, count_time=time)
+    yield from _pre_scan(dets, total_points=total_points, count_time=time)
     return (yield from plans.configure_count_time_wrapper(
-        plans.spiral(x_motor, y_motor, x_start, y_start, x_range,
+        plans.spiral(dets, x_motor, y_motor, x_start, y_start, x_range,
                      y_range, dr, nth,
                      per_step=per_step, md=md, tilt=tilt),
         time=time))
 
 
 @functools.wraps(plans.relative_spiral)
-def relative_spiral(x_motor, y_motor, x_range, y_range, dr, nth, time=None,
-                    *, per_step=None, md=None, tilt=0.0):
+def relative_spiral(dets, x_motor, y_motor, x_range, y_range, dr, nth,
+                    time=None, *, per_step=None, md=None, tilt=0.0):
     cyc = plan_patterns.spiral_simple(x_motor, y_motor, x_motor.position,
                                       y_motor.position, x_range, y_range, dr,
                                       nth, tilt=tilt)
     total_points = len(cyc)
 
-    yield from _pre_scan(total_points=total_points, count_time=time)
+    yield from _pre_scan(dets, total_points=total_points, count_time=time)
     return (yield from plans.configure_count_time_wrapper(
-        plans.relative_spiral(x_motor, y_motor, x_range, y_range, dr, nth,
-                              per_step=per_step, md=md, tilt=tilt),
+        plans.relative_spiral(dets, x_motor, y_motor, x_range,
+                              y_range, dr, nth, per_step=per_step, md=md,
+                              tilt=tilt),
         time=time))
 
 
 @functools.wraps(plans.outer_product_scan)
-def absolute_mesh(*args, time=None, md=None):
+def absolute_mesh(dets, *args, time=None, md=None):
     if (len(args) % 4) == 1:
         if time is not None:
             raise ValueError('wrong number of positional arguments')
@@ -201,15 +206,15 @@ def absolute_mesh(*args, time=None, md=None):
     for motor, start, stop, num in chunked(args, 4):
         total_points *= num
 
-    yield from _pre_scan(total_points=total_points, count_time=time)
+    yield from _pre_scan(dets, total_points=total_points, count_time=time)
     return (yield from plans.configure_count_time_wrapper(
-        plans.outer_product_scan(*args, md=md),
+        plans.outer_product_scan(dets, *args, md=md),
         time=time))
 
 
 @functools.wraps(absolute_mesh)
-def relative_mesh(*args, time=None, md=None):
-    plan = absolute_mesh(*args, time=time, md=md)
+def relative_mesh(dets, *args, time=None, md=None):
+    plan = absolute_mesh(dets, *args, time=time, md=md)
     plan = plans.relative_set(plan)  # re-write trajectory as relative
     return (yield from plans.reset_positions(plan))
 
@@ -224,26 +229,26 @@ def _get_a2_args(*args, time=None):
 
 
 @functools.wraps(plans.inner_product_scan)
-def a2scan(*args, time=None, md=None):
+def a2scan(dets, *args, time=None, md=None):
     args, time = _get_a2_args(*args, time=time)
     total_points = int(args[-1])
-    yield from _pre_scan(total_points=total_points, count_time=time)
+    yield from _pre_scan(dets, total_points=total_points, count_time=time)
     return (yield from plans.configure_count_time_wrapper(
-        plans.inner_product_scan(*args, md=md),
+        plans.inner_product_scan(dets, *args, md=md),
         time=time))
 
 
 @functools.wraps(plans.relative_inner_product_scan)
-def d2scan(*args, time=None, md=None):
+def d2scan(dets, *args, time=None, md=None):
     args, time = _get_a2_args(*args, time=time)
     total_points = int(args[-1])
-    yield from _pre_scan(total_points=total_points, count_time=time)
+    yield from _pre_scan(dets, total_points=total_points, count_time=time)
     return (yield from plans.configure_count_time_wrapper(
-        plans.relative_inner_product_scan(*args, md=md),
+        plans.relative_inner_product_scan(dets, *args, md=md),
         time=time))
 
 
-def scan_steps(*args, time=None, per_step=None, md=None):
+def scan_steps(dets, *args, time=None, per_step=None, md=None):
     '''
     Absolute scan over an arbitrary N-dimensional trajectory.
 
