@@ -275,21 +275,17 @@ def scan_steps(dets, *args, time=None, per_step=None, md=None):
 
     cyclers = [cycler(motor, steps) for motor, steps in chunked(args, 2)]
     cyc = sum(cyclers[1:], cyclers[0])
-    motors = list(cyc.keys)
     total_points = len(cyc)
 
     if md is None:
         md = {}
 
     from collections import ChainMap
-    from bluesky.callbacks import LiveTable
 
-    md = ChainMap(md, {'plan_name': 'scan_steps',
-                       gs.MD_TIME_KEY: time})
+    md = ChainMap(md, {'plan_name': 'scan_steps'})
 
-    plan = plans.scan_nd(gs.DETS, cyc, md=md, per_step=per_step)
-    plan = plans.baseline_wrapper(plan, motors + gs.BASELINE_DEVICES)
+    plan = plans.scan_nd(dets, cyc, md=md, per_step=per_step)
     plan = plans.configure_count_time_wrapper(plan, time)
 
-    yield from _pre_scan(total_points=total_points, count_time=time)
+    yield from _pre_scan(dets, total_points=total_points, count_time=time)
     return (yield from plans.reset_positions_wrapper(plan))
