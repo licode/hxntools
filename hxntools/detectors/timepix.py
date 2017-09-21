@@ -11,7 +11,7 @@ from ophyd import (Device, Component as Cpt, AreaDetector, TIFFPlugin,
 from ophyd import (EpicsSignal, EpicsSignalRO)
 from ophyd.areadetector import (EpicsSignalWithRBV as SignalWithRBV, CamBase)
 from .utils import makedirs
-from .trigger_mixins import (HxnModalTrigger, FileStoreBulkReadable)
+from .trigger_mixins import HxnModalTrigger
 
 
 logger = logging.getLogger(__name__)
@@ -97,7 +97,7 @@ class TimepixDetector(HxnModalTrigger, AreaDetector):
                            'reliably')
 
 
-class TimepixTiffPlugin(TIFFPlugin, FileStoreBulkReadable, FileStoreTIFF,
+class TimepixTiffPlugin(TIFFPlugin, FileStoreIterativeWrite, FileStoreTIFF,
                         Device):
     def mode_external(self):
         total_points = self.parent.mode_settings.total_points.get()

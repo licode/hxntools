@@ -20,6 +20,6 @@ setup(
     author='Brookhaven National Laboratory',
     packages=['hxntools', 'hxntools.detectors', 'hxntools.handlers'],
     install_requires=['numpy>=1.8',
-                      'h5py>=2.5.0', 'filestore>0.7'],
+                      'h5py>=2.5.0', 'databroker'],
 
 )

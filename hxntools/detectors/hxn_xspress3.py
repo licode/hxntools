@@ -13,9 +13,8 @@ from ophyd.status import DeviceStatus
 from ophyd.device import (BlueskyInterface, Staged)
 from ophyd.utils import set_and_wait
 
-from filestore.api import bulk_insert_datum
-from .xspress3 import (XspressTrigger, Xspress3Detector, Xspress3FileStore,
-                       Xspress3ROI)
+from .xspress3 import (XspressTrigger, Xspress3Detector,
+                       Xspress3FileStore, Xspress3ROI)
 from .trigger_mixins import HxnModalBase
 
 
@@ -123,7 +122,6 @@ class HxnXspress3DetectorBase(HxnXspressTrigger, Xspress3Detector):
     def bulk_read(self, timestamps=None):
         # TODO not compatible with collect() just yet due to the values
         #      returned
-        fs_res = self.hdf5._filestore_res
         if timestamps is None:
             timestamps = self.flyer_timestamps.get()
 
@@ -145,8 +143,9 @@ class HxnXspress3DetectorBase(HxnXspressTrigger, Xspress3Detector):
                            'channel': ch}
 
         uids = [ch_uids[ch] for ch in channels]
-        bulk_insert_datum(fs_res, itertools.chain(*uids),
-                          get_datum_args())
+        self._reg.bulk_register_datum_list(
+            self._filestore_res, uids, get_datum_args())
+
         return OrderedDict((self.hdf5.mds_keys[ch], ch_uids[ch])
                            for ch in channels)
 

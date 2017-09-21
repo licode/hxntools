@@ -1,10 +1,7 @@
 import logging
 import collections
-import functools
 import numpy as np
 import pandas as pd
-
-from databroker import (DataBroker as db, get_table as _get_table)
 
 
 logger = logging.getLogger(__name__)
@@ -41,7 +38,6 @@ scan_types = dict(
             # everything else can be done with plan_patterns
             ),
 )
-
 
 
 def _get_scan_info_bs_v0(header):
@@ -309,8 +305,8 @@ class ScanInfo(object):
             key = self.key
 
         if key:
-            for event in db.get_events(self.header, fill=False,
-                                       stream_name=stream_name):
+            for event in self.header.events(fill=False,
+                                            stream_name=stream_name):
                 yield event['data'][key]
 
     def __iter__(self):
@@ -336,7 +332,7 @@ def combine_tables_on_time(header, names, *, method='ffill', **kwargs):
     -------
     df : pd.DataFrame
     '''
-    dfs = [_get_table(header, name=name, **kwargs)
+    dfs = [header.table(stream_name=name, **kwargs)
            for name in names]
 
     primary_df = dfs[0]
@@ -357,8 +353,8 @@ def combine_tables_on_time(header, names, *, method='ffill', **kwargs):
     return pd.concat(dfs, axis=1)
 
 
-@functools.wraps(_get_table)
-def get_combined_table(headers, name='primary', combine_table_names=None,
+def get_combined_table(headers, name='primary',
+                       combine_table_names=None,
                        **kwargs):
     # Functions the same as get_table, but also combines ('primary' and
     # 'motor2') when necessary (or whatever is in combine_table_names)
@@ -370,7 +366,8 @@ def get_combined_table(headers, name='primary', combine_table_names=None,
             combine_table_names = []
 
     if not combine_table_names:
-        return _get_table(headers, name=name, **kwargs)
+        return [h.table(stream_name=name, **kwargs)
+                for h in headers]
 
     try:
         headers.items()
