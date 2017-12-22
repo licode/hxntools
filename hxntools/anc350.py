@@ -58,13 +58,15 @@ class Anc350Controller(Device):
 class HxnAnc350Axis(Anc350Axis):
     def __init__(self, controller, axis_num, **kwargs):
         prefix = 'XF:03IDC-ES{{ANC350:{}-Ax:{}}}'.format(controller, axis_num)
-        super().__init__(prefix, axis_num=axis_num, **kwargs)
+        name = f'anc_axis_{controller}'
+        super().__init__(prefix, axis_num=axis_num, name=name, **kwargs)
 
 
 class HxnAnc350Controller(Anc350Controller):
     def __init__(self, controller, **kwargs):
         prefix = 'XF:03IDC-ES{{ANC350:{}}}'.format(controller)
-        super().__init__(prefix, **kwargs)
+        name = f'anc_controller_{controller}'
+        super().__init__(prefix, name=name, **kwargs)
 
         self.axes = {axis: HxnAnc350Axis(controller, axis)
                      for axis in range(anc350_axis_counts[controller])}
