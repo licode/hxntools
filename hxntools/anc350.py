@@ -1,8 +1,8 @@
 import time
-from ophyd import (Device, Component as Cpt, FormattedComponent as FC)
-from ophyd import (EpicsMotor, EpicsSignal, EpicsSignalRO, DeviceStatus)
-from ophyd.utils import set_and_wait
+from ophyd import (Device, Component as Cpt)
+from ophyd import (EpicsMotor, EpicsSignal)
 
+import bluesky.plan_stubs as bps
 
 anc350_dc_controllers = [2, 3, 4, 7]
 # add 6 to this list if controller's moved back to the microscope rack
@@ -41,18 +41,16 @@ class Anc350Controller(Device):
         enable = 1 if enable else 0
         period = int(period)
         off_time = int(off_time)
+        wait_group = 'anc_set_dc'
 
-        self.dc_period.put(period)
-        self.dc_off_time.put(off_time)
-
+        yield from bps.abs_set(self.dc_period, period,
+                               group=wait_group)
+        yield from bps.abs_set(self.dc_off_time, off_time,
+                               group=wait_group)
+        yield from bps.abs_set(self.dc_enable, enable,
+                               group=wait_group)
         if verify:
-            set_and_wait(self.dc_period, period)
-            set_and_wait(self.dc_off_time, off_time)
-
-        self.dc_enable.put(enable)
-
-        if verify:
-            set_and_wait(self.dc_enable, enable)
+            yield from bps.wait(group=wait_group)
 
 
 class HxnAnc350Axis(Anc350Axis):
@@ -94,7 +92,7 @@ def _wait_tries(signal, value, tries=20, period=0.1):
 
 def _dc_toggle(axis, enable, freq, dc_period, off_time):
     print('Axis {} {}: '.format(axis.axis_num, axis.desc.value), end='')
-    set_and_wait(axis.frequency, freq)
+    yield from bps.mov(axis.frequency, freq)
     print('frequency={}'.format(axis.frequency.get()))
 
 
@@ -107,7 +105,7 @@ def dc_toggle(enable, controllers=None, freq=100, dc_period=20, off_time=10):
         controller = anc350_controllers[controller]
 
         try:
-            controller.setup_dc(enable, dc_period, off_time)
+            yield from controller.setup_dc(enable, dc_period, off_time)
         except RuntimeError as ex:
             print('[Failed]', ex)
         except TimeoutError:
@@ -123,12 +121,13 @@ def dc_toggle(enable, controllers=None, freq=100, dc_period=20, off_time=10):
 
         for axis_num, axis in sorted(controller.axes.items()):
             print('\t', end='')
-            _dc_toggle(axis, enable, freq, dc_period, off_time)
+            yield from _dc_toggle(axis, enable, freq,
+                                  dc_period, off_time)
 
 
 def dc_on(*, frequency=100):
-    dc_toggle(True, freq=frequency)
+    yield from dc_toggle(True, freq=frequency)
 
 
 def dc_off(*, frequency=1000):
-    dc_toggle(False, freq=frequency)
+    yield from dc_toggle(False, freq=frequency)
