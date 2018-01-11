@@ -16,14 +16,11 @@ def rename_device(dev, device_name, *,
     '''
     dev.name = device_name
 
-    if not hasattr(dev, 'signal_names'):
-        return
-
     if special_attributes is None:
         special_attributes = ('readback', 'user_readback')
 
     cls = dev.__class__
-    for attribute in dev.signal_names:
+    for attribute in dev.component_names:
         obj = getattr(dev, attribute)
         component_cls = getattr(cls, attribute)
 
@@ -43,7 +40,7 @@ def rename_sub_devices(dev, *, special_attributes=None):
     '''Rename all sub-devices according to their keyword argument names'''
     cls = dev.__class__
 
-    for attribute in dev.signal_names:
+    for attribute in dev.component_names:
         obj = getattr(dev, attribute)
         component_cls = getattr(cls, attribute)
         new_name = component_cls.kwargs.get('name', attribute)

@@ -11,8 +11,9 @@ from .trigger_mixins import HxnModalBase
 logger = logging.getLogger(__name__)
 
 
-def _get_configuration_attrs(cls, *, signal_class=Signal):
-    return [sig_name for sig_name in cls.signal_names
+def _get_configuration_attrs(inst, *, signal_class=Signal):
+    cls = inst.__class__
+    return [sig_name for sig_name in cls.component_names
             if issubclass(getattr(cls, sig_name).cls, signal_class)]
 
 
@@ -120,7 +121,7 @@ class ZebraPulse(Device):
         if read_attrs is None:
             read_attrs = []
         if configuration_attrs is None:
-            configuration_attrs = _get_configuration_attrs(self.__class__)
+            configuration_attrs = _get_configuration_attrs(self)
 
         zebra = parent
         self.index = index
@@ -156,7 +157,7 @@ class ZebraOutputBase(Device):
         if read_attrs is None:
             read_attrs = []
         if configuration_attrs is None:
-            configuration_attrs = _get_configuration_attrs(self.__class__)
+            configuration_attrs = _get_configuration_attrs(self)
 
         super().__init__(prefix, read_attrs=read_attrs,
                          configuration_attrs=configuration_attrs, **kwargs)
@@ -175,7 +176,7 @@ class ZebraOutputType(Device):
         if read_attrs is None:
             read_attrs = []
         if configuration_attrs is None:
-            configuration_attrs = _get_configuration_attrs(self.__class__)
+            configuration_attrs = _get_configuration_attrs(self)
 
         super().__init__(prefix, read_attrs=read_attrs,
                          configuration_attrs=configuration_attrs, **kwargs)
@@ -222,7 +223,7 @@ class ZebraGateInput(Device):
         if read_attrs is None:
             read_attrs = []
         if configuration_attrs is None:
-            configuration_attrs = _get_configuration_attrs(self.__class__)
+            configuration_attrs = _get_configuration_attrs(self)
 
         gate = parent
         zebra = gate.parent
@@ -294,7 +295,7 @@ class Zebra(HxnModalBase, Device):
         if read_attrs is None:
             read_attrs = []
         if configuration_attrs is None:
-            configuration_attrs = _get_configuration_attrs(self.__class__)
+            configuration_attrs = _get_configuration_attrs(self)
 
         super().__init__(prefix, configuration_attrs=configuration_attrs,
                          read_attrs=read_attrs, **kwargs)
